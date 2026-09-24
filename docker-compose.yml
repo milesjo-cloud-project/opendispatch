@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16
+    env_file: .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./api
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./api/app:/srv/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+      target: dev
+    environment:
+      VITE_API_TARGET: http://api:8080
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./web/src:/srv/web/src
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

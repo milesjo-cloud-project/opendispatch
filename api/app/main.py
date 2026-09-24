@@ -1,0 +1,26 @@
+from fastapi import Depends, FastAPI, Response
+
+from app.adapters.db.postgres import PostgresHealth
+from app.config import settings
+from app.ports.health import DatabaseHealthPort
+
+app = FastAPI(title="OpenDispatch API")
+
+
+def get_db_health() -> DatabaseHealthPort:
+    return PostgresHealth(settings.database_url)
+
+
+@app.get("/healthz")
+def healthz() -> dict:
+    """Liveness: the process is up. Never touches the database."""
+    return {"status": "ok", "env": settings.app_env}
+
+
+@app.get("/readyz")
+def readyz(response: Response, db: DatabaseHealthPort = Depends(get_db_health)) -> dict:
+    """Readiness: the API can reach Postgres."""
+    if db.ping():
+        return {"status": "ready", "database": "up"}
+    response.status_code = 503
+    return {"status": "not_ready", "database": "down"}

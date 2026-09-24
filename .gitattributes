@@ -1,0 +1,4 @@
+# Keep LF line endings so files built into Linux containers work on Windows checkouts
+* text=auto eol=lf
+*.png binary
+*.jpg binary
