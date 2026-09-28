@@ -1,41 +1,17 @@
 """Saves a job and its events to real Postgres and reads them back.
 
-Needs a migrated database at TEST_DATABASE_URL (CI provides one):
-    alembic upgrade head
-Skipped when TEST_DATABASE_URL isn't set or the database can't be reached.
+Needs a migrated database at TEST_DATABASE_URL (see conftest.py).
 """
-import os
 from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select, text
-from sqlalchemy.exc import OperationalError
 
 from app.domain.entities import Company, Customer, Job, JobEvent, Technician, User
 from app.domain.errors import IllegalTransition
 from app.domain.job_status import JobStatus
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture
-def session():
-    from app.adapters.db.session import make_session_factory
-
-    url = os.getenv("TEST_DATABASE_URL")
-    if not url:
-        pytest.skip("TEST_DATABASE_URL not set")
-    try:
-        factory = make_session_factory(url)
-        s = factory()
-        s.execute(text("SELECT 1"))
-    except OperationalError as exc:
-        pytest.skip(f"Postgres not available: {exc}")
-    try:
-        yield s
-    finally:
-        s.rollback()  # nothing from this test is kept
-        s.close()
 
 
 def test_job_and_events_round_trip(session):

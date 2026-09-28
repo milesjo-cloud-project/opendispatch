@@ -35,3 +35,8 @@ def test_readyz_down():
         assert client.get("/readyz").status_code == 503
     finally:
         app.dependency_overrides.clear()
+
+
+def test_docs_available_locally():
+    # Tests run with APP_ENV=local; in dev/prod docs_url is None (see main.py).
+    assert client.get("/docs").status_code == 200

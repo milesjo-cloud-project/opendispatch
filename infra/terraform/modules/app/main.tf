@@ -63,7 +63,8 @@ resource "google_service_account" "deployer" {
 }
 
 resource "google_project_iam_member" "deployer_roles" {
-  for_each = toset(["roles/run.admin", "roles/artifactregistry.writer"])
+  # run.developer can deploy revisions but can't change who may call the service
+  for_each = toset(["roles/run.developer", "roles/artifactregistry.writer"])
   project  = var.project_id
   role     = each.value
   member   = "serviceAccount:${google_service_account.deployer.email}"
@@ -97,8 +98,9 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.ref"        = "assertion.ref"
   }
 
-  # Only this repo can use the pool. Without this, any GitHub repo could try.
-  attribute_condition = "assertion.repository == \"${var.github_repo}\""
+  # Only the main branch of this repo can use the pool. Without the repository check any
+  # GitHub repo could try; without the ref check any branch pushed here could deploy.
+  attribute_condition = "assertion.repository == \"${var.github_repo}\" && assertion.ref == \"refs/heads/main\""
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"

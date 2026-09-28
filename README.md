@@ -21,7 +21,10 @@ docker compose up --build
 - Web: http://localhost:5173 (shows whether the API and database are up)
 - API: http://localhost:8080/healthz and http://localhost:8080/readyz
 - API docs: http://localhost:8080/docs
-- Postgres: localhost:5432
+- Postgres: 127.0.0.1:5432 (only reachable from your own machine)
+
+Use `127.0.0.1`, not `localhost`, in database URLs on your machine. On Windows `localhost`
+tries IPv6 first, and the containers only listen on IPv4.
 
 The API container runs `alembic upgrade head` on startup, so the tables are created for you.
 Code changes in `api/app` and `web/src` reload automatically.
@@ -38,7 +41,8 @@ pip install -r requirements-dev.txt
 python -m pytest -v
 ```
 
-Tests that need Postgres are skipped unless `TEST_DATABASE_URL` points at a migrated database.
+Tests that need Postgres are skipped unless `TEST_DATABASE_URL` points at a migrated database,
+e.g. with `docker compose up` running: `$env:TEST_DATABASE_URL = "postgresql://opendispatch:change-me@127.0.0.1:5432/opendispatch"`
 
 ## Job status flow
 
