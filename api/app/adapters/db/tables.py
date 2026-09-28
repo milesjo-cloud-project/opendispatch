@@ -9,16 +9,19 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     MetaData,
     String,
     Table,
     Text,
+    UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import registry
 
-from app.domain.entities import Company, Customer, Job, JobEvent, Technician, User
+from app.domain.entities import Company, Customer, Job, JobEvent, Technician, User, UserRole
 from app.domain.job_status import JobStatus
 
 # Stable constraint names, so migrations and downgrades don't break.
@@ -34,17 +37,21 @@ metadata = MetaData(
 mapper_registry = registry(metadata=metadata)
 
 
-def _status_column_type(name: str) -> Enum:
+def _enum_type(enum_cls, name: str) -> Enum:
     # Stored as VARCHAR + CHECK constraint (not a native Postgres enum),
-    # so adding a status later is an easy migration.
+    # so adding a value later is an easy migration.
     return Enum(
-        JobStatus,
+        enum_cls,
         name=name,
         native_enum=False,
         create_constraint=True,
         length=20,
         values_callable=lambda e: [m.value for m in e],
     )
+
+
+def _status_column_type(name: str) -> Enum:
+    return _enum_type(JobStatus, name)
 
 
 def _uuid() -> UUID:
@@ -57,6 +64,22 @@ def _company_fk() -> Column:
 
 def _created_at() -> Column:
     return Column("created_at", DateTime(timezone=True), nullable=False)
+
+
+def _company_scoped_key(table: str) -> UniqueConstraint:
+    # Lets other tables point at (company_id, id), so a reference can't cross companies.
+    return UniqueConstraint("company_id", "id", name=f"uq_{table}_company_id_id")
+
+
+def _same_company_fk(name: str, column: str, target: str) -> ForeignKeyConstraint:
+    """FK on (company_id, column) -> target(company_id, id).
+
+    A job can only point at a customer/technician/user in its own company.
+    When `column` is NULL the constraint is skipped (Postgres MATCH SIMPLE).
+    """
+    return ForeignKeyConstraint(
+        ["company_id", column], [f"{target}.company_id", f"{target}.id"], name=name
+    )
 
 
 companies = Table(
@@ -72,21 +95,26 @@ users = Table(
     metadata,
     Column("id", _uuid(), primary_key=True),
     _company_fk(),
-    Column("email", String(320), nullable=False, unique=True),
-    Column("role", String(20), nullable=False),
+    Column("email", String(320), nullable=False),
+    Column("role", _enum_type(UserRole, "user_role"), nullable=False),
     _created_at(),
+    _company_scoped_key("users"),
 )
+# Case-insensitive: Bob@x.com and bob@x.com can't be two accounts.
+Index("uq_users_email_lower", func.lower(users.c.email), unique=True)
 
 technicians = Table(
     "technicians",
     metadata,
     Column("id", _uuid(), primary_key=True),
     _company_fk(),
-    Column("user_id", _uuid(), ForeignKey("users.id"), nullable=False, unique=True),
+    Column("user_id", _uuid(), nullable=False, unique=True),
     Column("display_name", String(200), nullable=False),
     Column("phone", String(40)),
     Column("active", Boolean, nullable=False, default=True),
     _created_at(),
+    _company_scoped_key("technicians"),
+    _same_company_fk("fk_technicians_user_same_company", "user_id", "users"),
 )
 
 customers = Table(
@@ -99,6 +127,7 @@ customers = Table(
     Column("email", String(320)),
     Column("address", Text),
     _created_at(),
+    _company_scoped_key("customers"),
 )
 
 jobs = Table(
@@ -106,27 +135,34 @@ jobs = Table(
     metadata,
     Column("id", _uuid(), primary_key=True),
     Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False),
-    Column("customer_id", _uuid(), ForeignKey("customers.id"), nullable=False, index=True),
-    Column("technician_id", _uuid(), ForeignKey("technicians.id"), index=True),
+    Column("customer_id", _uuid(), nullable=False, index=True),
+    Column("technician_id", _uuid(), index=True),
     Column("title", String(200), nullable=False),
     Column("description", Text),
     Column("status", _status_column_type("job_status"), nullable=False),
     Column("scheduled_start", DateTime(timezone=True)),
     _created_at(),
     Index("ix_jobs_company_status", "company_id", "status"),
+    _company_scoped_key("jobs"),
+    _same_company_fk("fk_jobs_customer_same_company", "customer_id", "customers"),
+    _same_company_fk("fk_jobs_technician_same_company", "technician_id", "technicians"),
 )
 
+# Append-only: migration 0002 adds a trigger that rejects UPDATE, DELETE and TRUNCATE,
+# and a job with history can't be deleted (no cascade).
 job_events = Table(
     "job_events",
     metadata,
     Column("id", _uuid(), primary_key=True),
-    Column("job_id", _uuid(), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True),
+    Column("job_id", _uuid(), nullable=False, index=True),
     Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False, index=True),
     Column("from_status", _status_column_type("job_event_from_status")),
     Column("to_status", _status_column_type("job_event_to_status"), nullable=False),
-    Column("actor_user_id", _uuid(), ForeignKey("users.id")),
+    Column("actor_user_id", _uuid()),
     Column("note", Text),
     Column("occurred_at", DateTime(timezone=True), nullable=False),
+    _same_company_fk("fk_job_events_job_same_company", "job_id", "jobs"),
+    _same_company_fk("fk_job_events_actor_same_company", "actor_user_id", "users"),
 )
 
 _mapped = False

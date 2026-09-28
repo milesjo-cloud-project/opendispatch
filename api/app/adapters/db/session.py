@@ -17,5 +17,6 @@ def sqlalchemy_url(url: str | None = None) -> str:
 
 def make_session_factory(url: str | None = None) -> sessionmaker:
     start_mappers()
-    engine = create_engine(sqlalchemy_url(url))
+    # Fail fast instead of hanging when the address is wrong or unreachable
+    engine = create_engine(sqlalchemy_url(url), connect_args={"connect_timeout": 5})
     return sessionmaker(bind=engine, expire_on_commit=False)

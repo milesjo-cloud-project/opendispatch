@@ -4,6 +4,7 @@ The database mapping lives in infra/db/tables.py.
 """
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from uuid import UUID, uuid4
 
 from .errors import DomainRuleViolation, IllegalTransition
@@ -22,14 +23,28 @@ class Company:
     created_at: datetime = field(default_factory=_now)
 
 
+class UserRole(str, Enum):
+    OWNER = "owner"
+    DISPATCHER = "dispatcher"
+    TECHNICIAN = "technician"
+
+
 @dataclass(eq=False)
 class User:
     """Anyone who logs in: owner, dispatcher, or technician."""
     company_id: UUID
     email: str
-    role: str  # "owner" | "dispatcher" | "technician"
+    role: UserRole
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=_now)
+
+    def __post_init__(self) -> None:
+        # One account per address: Bob@x.com and bob@x.com are the same person.
+        self.email = self.email.strip().lower()
+        try:
+            self.role = UserRole(self.role)
+        except ValueError:
+            raise DomainRuleViolation(f"Unknown role '{self.role}'") from None
 
 
 @dataclass(eq=False)

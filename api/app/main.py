@@ -4,7 +4,13 @@ from app.adapters.db.postgres import PostgresHealth
 from app.config import settings
 from app.ports.health import DatabaseHealthPort
 
-app = FastAPI(title="OpenDispatch API")
+# Interactive docs only locally; in dev/prod they'd advertise every endpoint to anyone.
+app = FastAPI(
+    title="OpenDispatch API",
+    docs_url="/docs" if settings.is_local else None,
+    redoc_url="/redoc" if settings.is_local else None,
+    openapi_url="/openapi.json" if settings.is_local else None,
+)
 
 
 def get_db_health() -> DatabaseHealthPort:
