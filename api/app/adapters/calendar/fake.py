@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from app.domain.job import Job
+from app.domain.entities import Job
 
 
 class FakeCalendar:

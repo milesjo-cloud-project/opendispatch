@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from app.domain.job import Job
+from app.domain.entities import Job
 
 
 class CalendarPort(Protocol):
