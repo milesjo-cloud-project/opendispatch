@@ -7,6 +7,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY alembic.ini .
+COPY migrations ./migrations
 
 # Cloud Run sets $PORT; locally it defaults to 8080
 ENV PORT=8080

@@ -33,6 +33,9 @@ jobs:
           cache: pip
           cache-dependency-path: api/requirements*.txt
       - run: pip install -r requirements-dev.txt
+      - run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
       - run: python -m pytest -v
 
   web:
