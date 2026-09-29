@@ -3,24 +3,39 @@
 The database mapping lives in infra/db/tables.py.
 """
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from uuid import UUID, uuid4
 
 from .errors import DomainRuleViolation, IllegalTransition
-from .job_status import JobStatus, can_transition
+from .job_status import TERMINAL, JobStatus, can_transition
+
+# Expenses above this need the owner's OK. Money is always whole cents: $500.00.
+DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS = 50_000
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _require_cents(value, what: str, *, allow_zero: bool) -> None:
+    # bool is a subclass of int; True dollars is a bug, not one cent.
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise DomainRuleViolation(f"{what} must be a whole number of cents")
+    if value < 0 or (value == 0 and not allow_zero):
+        raise DomainRuleViolation(f"{what} must be {'zero or more' if allow_zero else 'more than zero'}")
+
+
 @dataclass(eq=False)
 class Company:
     """A contractor business. Every other record belongs to exactly one company."""
     name: str
+    expense_approval_limit_cents: int = DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=_now)
+
+    def __post_init__(self) -> None:
+        _require_cents(self.expense_approval_limit_cents, "Approval limit", allow_zero=True)
 
 
 class UserRole(str, Enum):
@@ -92,8 +107,13 @@ class Job:
     status: JobStatus = JobStatus.REQUESTED
     technician_id: UUID | None = None
     scheduled_start: datetime | None = None
+    quoted_amount_cents: int | None = None
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=_now)
+
+    def __post_init__(self) -> None:
+        if self.quoted_amount_cents is not None:
+            _require_cents(self.quoted_amount_cents, "Quoted amount", allow_zero=True)
 
     def transition_to(
         self,
@@ -124,3 +144,77 @@ class Job:
         )
         self.status = target
         return event
+
+    def add_expense(
+        self,
+        company: Company,
+        submitted_by: User,
+        amount_cents: int,
+        vendor: str | None = None,
+        description: str | None = None,
+        spent_on: date | None = None,
+    ) -> "Expense":
+        """The ONLY way to record spend on a job. Returns the Expense the caller must save.
+
+        Amounts up to the company's approval limit are approved straight away;
+        anything over it waits for the owner. An owner's own spend never waits on themselves.
+        """
+        if company.id != self.company_id or submitted_by.company_id != self.company_id:
+            raise DomainRuleViolation("Expense, job and submitter must belong to the same company")
+        if self.status in TERMINAL:
+            raise DomainRuleViolation(f"Can't add expenses to a {self.status.value} job")
+        _require_cents(amount_cents, "Expense amount", allow_zero=False)
+
+        expense = Expense(
+            company_id=self.company_id,
+            job_id=self.id,
+            submitted_by_user_id=submitted_by.id,
+            amount_cents=amount_cents,
+            vendor=vendor,
+            description=description,
+            spent_on=spent_on,
+        )
+        if amount_cents <= company.expense_approval_limit_cents or submitted_by.role == UserRole.OWNER:
+            expense.status = ExpenseStatus.APPROVED
+            expense.decided_at = expense.created_at  # approved automatically, so no decided_by
+        return expense
+
+
+class ExpenseStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+@dataclass(eq=False)
+class Expense:
+    """Money spent on a job. Create through Job.add_expense(), decide with approve()/reject()."""
+    company_id: UUID
+    job_id: UUID
+    submitted_by_user_id: UUID
+    amount_cents: int
+    vendor: str | None = None
+    description: str | None = None
+    spent_on: date | None = None
+    status: ExpenseStatus = ExpenseStatus.PENDING
+    decided_by_user_id: UUID | None = None
+    decided_at: datetime | None = None
+    decision_note: str | None = None
+    id: UUID = field(default_factory=uuid4)
+    created_at: datetime = field(default_factory=_now)
+
+    def approve(self, approver: User, note: str | None = None) -> None:
+        self._decide(ExpenseStatus.APPROVED, approver, note)
+
+    def reject(self, approver: User, note: str | None = None) -> None:
+        self._decide(ExpenseStatus.REJECTED, approver, note)
+
+    def _decide(self, outcome: ExpenseStatus, approver: User, note: str | None) -> None:
+        if self.status != ExpenseStatus.PENDING:
+            raise DomainRuleViolation(f"Expense is already {self.status.value}")
+        if approver.company_id != self.company_id or approver.role != UserRole.OWNER:
+            raise DomainRuleViolation("Only the company's owner can approve or reject expenses")
+        self.status = outcome
+        self.decided_by_user_id = approver.id
+        self.decided_at = _now()
+        self.decision_note = note
