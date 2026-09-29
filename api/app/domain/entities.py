@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from uuid import UUID, uuid4
 
+from .auth import LOCKOUT, MAX_FAILED_LOGINS, normalize_phone
 from .errors import DomainRuleViolation, IllegalTransition
 from .job_status import TERMINAL, JobStatus, can_transition
 
@@ -34,11 +35,17 @@ class Company:
     """A contractor business. Every other record belongs to exactly one company."""
     name: str
     expense_approval_limit_cents: int = DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS
+    # Texting budget alerts costs money per message, so it's opt-in (a paid add-on later).
+    sms_alerts_enabled: bool = False
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=_now)
 
     def __post_init__(self) -> None:
-        _require_cents(self.expense_approval_limit_cents, "Approval limit", allow_zero=True)
+        self.set_approval_limit(self.expense_approval_limit_cents)
+
+    def set_approval_limit(self, cents: int) -> None:
+        _require_cents(cents, "Approval limit", allow_zero=True)
+        self.expense_approval_limit_cents = cents
 
 
 class UserRole(str, Enum):
@@ -53,6 +60,10 @@ class User:
     company_id: UUID
     email: str
     role: UserRole
+    phone: str | None = None  # E.164, e.g. +15551234567. Where SMS alerts go.
+    password_hash: str | None = None  # None = can't log in yet
+    failed_logins: int = 0
+    locked_until: datetime | None = None
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=_now)
 
@@ -63,6 +74,24 @@ class User:
             self.role = UserRole(self.role)
         except ValueError:
             raise DomainRuleViolation(f"Unknown role '{self.role}'") from None
+        self.set_phone(self.phone)
+
+    def set_phone(self, raw: str | None) -> None:
+        self.phone = normalize_phone(raw) if raw else None
+
+    def is_locked(self, now: datetime) -> bool:
+        return self.locked_until is not None and now < self.locked_until
+
+    def record_failed_login(self, now: datetime) -> None:
+        """After MAX_FAILED_LOGINS wrong passwords in a row, lock the account for LOCKOUT."""
+        self.failed_logins += 1
+        if self.failed_logins >= MAX_FAILED_LOGINS:
+            self.locked_until = now + LOCKOUT
+            self.failed_logins = 0
+
+    def record_successful_login(self) -> None:
+        self.failed_logins = 0
+        self.locked_until = None
 
 
 @dataclass(eq=False)
@@ -79,8 +108,12 @@ class Technician:
     created_at: datetime = field(default_factory=_now)
 
     def __post_init__(self) -> None:
-        if self.hourly_rate_cents is not None:
-            _require_cents(self.hourly_rate_cents, "Hourly rate", allow_zero=True)
+        self.set_hourly_rate(self.hourly_rate_cents)
+
+    def set_hourly_rate(self, cents: int | None) -> None:
+        if cents is not None:
+            _require_cents(cents, "Hourly rate", allow_zero=True)
+        self.hourly_rate_cents = cents
 
 
 @dataclass(eq=False)
@@ -121,8 +154,12 @@ class Job:
     created_at: datetime = field(default_factory=_now)
 
     def __post_init__(self) -> None:
-        if self.quoted_amount_cents is not None:
-            _require_cents(self.quoted_amount_cents, "Quoted amount", allow_zero=True)
+        self.set_quote(self.quoted_amount_cents)
+
+    def set_quote(self, cents: int | None) -> None:
+        if cents is not None:
+            _require_cents(cents, "Quoted amount", allow_zero=True)
+        self.quoted_amount_cents = cents
 
     def transition_to(
         self,
