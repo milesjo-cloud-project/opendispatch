@@ -67,6 +67,19 @@ Money is stored as whole cents (`50_000` = $500.00), never floats.
 - `job_budget(job, expenses)` in `api/app/domain/budget.py` compares spend (approved + pending,
   not rejected) against `job.quoted_amount_cents`. `alert_for(...)` tells you when a new
   expense crosses 80% or 100%, once per threshold. Budgets warn; they never block spend.
+- Labor counts too: `job.log_time(technician, started_at, ended_at)` records time for the
+  assigned tech and copies their `hourly_rate_cents`, so a later raise doesn't change old jobs.
+- `app/services/spend.py` is what the API will call: `submit_expense()` and `log_time()` lock the
+  job, save the spend, and write a `budget_alerts` row in the same transaction if a threshold was
+  crossed. After committing, `send_pending_alerts(session, notifier)` sends them to the owners.
+  Locally the notifier just writes to the API log; email/SMS adapters come later.
+
+## Who sees what
+
+Rules live in `api/app/domain/access.py`; `api/app/adapters/db/queries.py` applies the same rules
+in SQL. Owners and dispatchers see every job in their company, plus quotes and budgets.
+Technicians see only jobs assigned to them, and only their own expenses on those jobs.
+Login itself isn't built yet; these rules take the user the login step will provide.
 
 ## Database migrations
 
@@ -87,6 +100,7 @@ api/
     domain/     business rules, plain Python (entities, job status flow)
     ports/      interfaces the domain needs (calendar, health, ...)
     adapters/   implementations of ports (postgres tables/session, fake calendar, later Google/Stripe/SMS)
+    services/   use cases the API calls (record spend, send alerts); they call the domain
     main.py     FastAPI wiring
   migrations/   Alembic
   tests/

@@ -2,13 +2,15 @@
 
 Budgets are tracked, not enforced: going over never blocks an expense, it raises an alert.
 Pending expenses count toward spend, so the owner hears about an overrun before approving it.
-Rejected expenses don't count. Labor will be added here once time tracking exists.
+Rejected expenses don't count. Labor (logged time x the tech's rate at the time) does.
 """
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
+from uuid import UUID, uuid4
 
-from .entities import Expense, ExpenseStatus, Job
+from .entities import Expense, ExpenseStatus, Job, TimeEntry
 
 WARNING_AT_PERCENT = 80
 
@@ -53,10 +55,11 @@ class JobBudget:
     quoted_cents: int | None
     approved_cents: int
     pending_cents: int
+    labor_cents: int = 0
 
     @property
     def spent_cents(self) -> int:
-        return self.approved_cents + self.pending_cents
+        return self.approved_cents + self.pending_cents + self.labor_cents
 
     @property
     def remaining_cents(self) -> int | None:
@@ -70,8 +73,14 @@ class JobBudget:
         return level_for(self.quoted_cents, self.spent_cents)
 
 
-def job_budget(job: Job, expenses: Iterable[Expense]) -> JobBudget:
-    approved = pending = 0
+def job_budget(
+    job: Job, expenses: Iterable[Expense], time_entries: Iterable[TimeEntry] = ()
+) -> JobBudget:
+    approved = pending = labor = 0
+    for entry in time_entries:
+        if entry.job_id != job.id:
+            raise ValueError(f"Time entry {entry.id} belongs to a different job")
+        labor += entry.labor_cost_cents
     for expense in expenses:
         if expense.job_id != job.id:
             raise ValueError(f"Expense {expense.id} belongs to a different job")
@@ -79,4 +88,29 @@ def job_budget(job: Job, expenses: Iterable[Expense]) -> JobBudget:
             approved += expense.amount_cents
         elif expense.status == ExpenseStatus.PENDING:
             pending += expense.amount_cents
-    return JobBudget(job.quoted_amount_cents, approved, pending)
+    return JobBudget(job.quoted_amount_cents, approved, pending, labor)
+
+
+@dataclass(eq=False)
+class BudgetAlert:
+    """A threshold a job crossed. Saved in the same transaction as the spend that caused it,
+    then sent to the owner afterwards (sent_at is set once it goes out).
+
+    One per job per level: a job warns once and goes over once, even if the quote changes later.
+    """
+    company_id: UUID
+    job_id: UUID
+    level: BudgetLevel
+    quoted_cents: int
+    spent_cents: int
+    sent_at: datetime | None = None
+    id: UUID = field(default_factory=uuid4)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @classmethod
+    def check(cls, job: Job, before: JobBudget, after: JobBudget) -> "BudgetAlert | None":
+        """The alert the move from `before` to `after` triggers, if any."""
+        level = alert_for(job.quoted_amount_cents, before.spent_cents, after.spent_cents)
+        if level is None:
+            return None
+        return cls(job.company_id, job.id, level, job.quoted_amount_cents, after.spent_cents)
