@@ -74,6 +74,20 @@ Money is stored as whole cents (`50_000` = $500.00), never floats.
   crossed. After committing, `send_pending_alerts(session, notifier)` sends them to the owners.
   Locally the notifier just writes to the API log; email/SMS adapters come later.
 
+## Using the app
+
+Open http://localhost:5173 and choose **New company? Sign up**. You're the owner. From there:
+
+- **Team**: add dispatchers and technicians with a starting password (owners only).
+  Technicians get a lane on the schedule and, on their phone, a **Today** list.
+- **Customers**: add and search customers, or create one while making a job.
+- **＋ New job**: a job with a time goes straight onto the schedule; without one it waits in
+  **Open shifts** as a draft.
+- Open any job to move it along. Office staff dispatch, invoice, mark paid or cancel;
+  technicians tap **On my way → Start work → Mark complete**.
+
+The login is kept in the browser for up to 14 days, so a reload doesn't sign you out.
+
 ## Logging in and using the API
 
 Open http://localhost:8080/docs, call `POST /auth/signup` with a company name, email and password
@@ -115,7 +129,6 @@ and the owner has a phone number (`PATCH /me`). Anyone else gets the alert in th
 Rules live in `api/app/domain/access.py`; `api/app/adapters/db/queries.py` applies the same rules
 in SQL. Owners and dispatchers see every job in their company, plus quotes and budgets.
 Technicians see only jobs assigned to them, and only their own expenses on those jobs.
-Login itself isn't built yet; these rules take the user the login step will provide.
 
 ## Database migrations
 
