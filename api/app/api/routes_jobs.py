@@ -3,12 +3,19 @@
 A job you can't see answers 404, the same as a job that doesn't exist.
 """
 from collections.abc import Callable
-from uuid import UUID
+from pathlib import Path
+from uuid import UUID, uuid4
+import mimetypes
+import re
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.adapters.db.job_repository import CustomerRepository, JobRepository
+from app.adapters.db.tables import job_attachments
+from app.adapters.storage.filesystem import FileSystemStorage
 from app.adapters.db.queries import visible_expenses, visible_job, visible_jobs
 from app.api.deps import Actor, current_actor, get_alert_sender, get_session, office_actor, owner_actor
 from app.api.schemas import (
@@ -19,6 +26,7 @@ from app.api.schemas import (
     JobCreate,
     JobEventOut,
     JobOut,
+    JobAttachmentOut,
     JobUpdate,
     SpendOut,
     StatusChangeIn,
@@ -27,12 +35,22 @@ from app.api.schemas import (
 )
 from app.domain.access import can_change_status, can_view_budget, is_office
 from app.domain.budget import JobBudget, job_budget
-from app.domain.entities import Customer, Expense, Job, JobEvent, Technician, TimeEntry
+from app.domain.entities import Customer, Expense, Job, JobAttachment, JobEvent, Technician, TimeEntry
 from app.domain.errors import DomainRuleViolation
 from app.services import spend
 from app.services.spend import NotFound
+from app.config import settings
 
 router = APIRouter(tags=["jobs"])
+MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024
+_storage = FileSystemStorage(settings.upload_dir)
+
+
+def _attachment_content_type(filename: str, declared: str | None) -> str | None:
+    detected = declared or "application/octet-stream"
+    guessed = mimetypes.guess_type(filename)[0] or ""
+    content_type = detected if detected.startswith("image/") or detected == "application/pdf" else guessed
+    return content_type if content_type.startswith("image/") or content_type == "application/pdf" else None
 
 
 def _job(session: Session, actor: Actor, job_id: UUID) -> Job:
@@ -42,10 +60,14 @@ def _job(session: Session, actor: Actor, job_id: UUID) -> Job:
     return job
 
 
-def _job_out(job: Job, actor: Actor) -> JobOut:
+def _job_out(job: Job, actor: Actor, session: Session) -> JobOut:
     out = JobOut.model_validate(job)
     if not can_view_budget(actor.user, job):
         out.quoted_amount_cents = None
+    customer = session.get(Customer, job.customer_id)
+    if customer is not None and customer.company_id == job.company_id:
+        out.customer_name = customer.name
+        out.customer_phone = customer.phone
     return out
 
 
@@ -58,8 +80,7 @@ def _budget_out(b: JobBudget) -> BudgetOut:
 def _check_refs(session: Session, company_id: UUID, customer_id=None, technician_id=None) -> None:
     """Friendly 422s for ids from another company (the database would refuse them anyway)."""
     if customer_id is not None:
-        c = session.get(Customer, customer_id)
-        if c is None or c.company_id != company_id:
+        if CustomerRepository(session).get_for_company(customer_id, company_id) is None:
             raise DomainRuleViolation("Unknown customer")
     if technician_id is not None:
         t = session.get(Technician, technician_id)
@@ -72,7 +93,7 @@ def _check_refs(session: Session, company_id: UUID, customer_id=None, technician
 @router.get("/jobs", response_model=list[JobOut])
 def list_jobs(actor: Actor = Depends(current_actor), session: Session = Depends(get_session)):
     """Owners and dispatchers get every job; technicians get the jobs assigned to them."""
-    return [_job_out(j, actor) for j in visible_jobs(session, actor.user)]
+    return [_job_out(j, actor, session) for j in visible_jobs(session, actor.user)]
 
 
 @router.post("/jobs", response_model=JobOut, status_code=201)
@@ -80,14 +101,14 @@ def create_job(body: JobCreate, actor: Actor = Depends(office_actor),
                session: Session = Depends(get_session)):
     _check_refs(session, actor.user.company_id, body.customer_id, body.technician_id)
     job = Job(company_id=actor.user.company_id, **body.model_dump())
-    session.add(job)
+    JobRepository(session).add(job)
     session.commit()
-    return _job_out(job, actor)
+    return _job_out(job, actor, session)
 
 
 @router.get("/jobs/{job_id}", response_model=JobOut)
 def get_job(job_id: UUID, actor: Actor = Depends(current_actor), session: Session = Depends(get_session)):
-    return _job_out(_job(session, actor, job_id), actor)
+    return _job_out(_job(session, actor, job_id), actor, session)
 
 
 @router.patch("/jobs/{job_id}", response_model=JobOut)
@@ -108,7 +129,7 @@ def update_job(job_id: UUID, body: JobUpdate, actor: Actor = Depends(office_acto
     if "quoted_amount_cents" in sent:
         job.set_quote(body.quoted_amount_cents)
     session.commit()
-    return _job_out(job, actor)
+    return _job_out(job, actor, session)
 
 
 @router.post("/jobs/{job_id}/status", response_model=JobOut)
@@ -119,9 +140,9 @@ def change_status(job_id: UUID, body: StatusChangeIn, actor: Actor = Depends(cur
     job = _job(session, actor, job_id)
     if not can_change_status(actor.user, job, body.status, actor.technician):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You can't make that change on this job")
-    session.add(job.transition_to(body.status, actor_user_id=actor.user.id, note=body.note))
+    JobRepository(session).add_event(job.transition_to(body.status, actor_user_id=actor.user.id, note=body.note))
     session.commit()
-    return _job_out(job, actor)
+    return _job_out(job, actor, session)
 
 
 @router.get("/jobs/{job_id}/events", response_model=list[JobEventOut])
@@ -130,6 +151,60 @@ def job_history(job_id: UUID, actor: Actor = Depends(current_actor), session: Se
     return session.scalars(
         select(JobEvent).where(JobEvent.job_id == job.id).order_by(JobEvent.occurred_at, JobEvent.id)
     ).all()
+
+
+@router.get("/jobs/{job_id}/attachments", response_model=list[JobAttachmentOut], tags=["documents"])
+def list_job_attachments(job_id: UUID, actor: Actor = Depends(current_actor), session: Session = Depends(get_session)):
+    job = _job(session, actor, job_id)
+    return session.execute(
+        select(job_attachments).where(job_attachments.c.job_id == job.id)
+        .order_by(job_attachments.c.created_at, job_attachments.c.id)
+    ).mappings().all()
+
+
+@router.post("/jobs/{job_id}/attachments", response_model=JobAttachmentOut, status_code=201, tags=["documents"])
+def upload_job_attachment(job_id: UUID, file: UploadFile = File(...), actor: Actor = Depends(current_actor),
+                          session: Session = Depends(get_session)):
+    """Store common images and PDFs. Bytes are capped and served back as downloads."""
+    job = _job(session, actor, job_id)
+    filename = Path((file.filename or "upload").replace("\\", "/")).name
+    filename = re.sub(r"[\x00-\x1f\x7f]", "", filename)[:255] or "upload"
+    content_type = _attachment_content_type(filename, file.content_type)
+    if content_type is None:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "Upload an image or PDF")
+    content = file.file.read(MAX_ATTACHMENT_BYTES + 1)
+    if not content or len(content) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Files must be between 1 byte and 12 MiB")
+    key = uuid4().hex
+    _storage.save(key, content)
+    attachment = JobAttachment(company_id=job.company_id, job_id=job.id,
+                               uploaded_by_user_id=actor.user.id, filename=filename,
+                               content_type=content_type, size_bytes=len(content), storage_key=key)
+    session.add(attachment)
+    try:
+        session.commit()
+    except Exception:
+        _storage.path(key).unlink(missing_ok=True)
+        raise
+    return attachment
+
+
+@router.get("/jobs/{job_id}/attachments/{attachment_id}", tags=["documents"])
+def download_job_attachment(job_id: UUID, attachment_id: UUID, actor: Actor = Depends(current_actor),
+                            session: Session = Depends(get_session)):
+    job = _job(session, actor, job_id)
+    row = session.execute(select(job_attachments).where(
+        job_attachments.c.id == attachment_id,
+        job_attachments.c.job_id == job.id,
+        job_attachments.c.company_id == actor.user.company_id,
+    )).mappings().one_or_none()
+    if row is None:
+        raise NotFound(f"Attachment {attachment_id}")
+    path = _storage.path(row["storage_key"])
+    if not path.is_file():
+        raise NotFound(f"Attachment file {attachment_id}")
+    return FileResponse(path, media_type="application/octet-stream", filename=row["filename"],
+                        headers={"X-Content-Type-Options": "nosniff"})
 
 
 @router.get("/jobs/{job_id}/budget", response_model=BudgetOut)

@@ -141,6 +141,20 @@ class JobEvent:
 
 
 @dataclass(eq=False)
+class JobAttachment:
+    """Metadata for a job file; file bytes live behind a storage adapter."""
+    company_id: UUID
+    job_id: UUID
+    uploaded_by_user_id: UUID
+    filename: str
+    content_type: str
+    size_bytes: int
+    storage_key: str
+    id: UUID = field(default_factory=uuid4)
+    created_at: datetime = field(default_factory=_now)
+
+
+@dataclass(eq=False)
 class Job:
     company_id: UUID
     customer_id: UUID

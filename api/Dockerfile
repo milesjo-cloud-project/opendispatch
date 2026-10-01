@@ -11,7 +11,9 @@ COPY alembic.ini .
 COPY migrations ./migrations
 
 # Don't run as root
-RUN useradd --uid 10001 --no-create-home app
+# and give it the one folder it writes to (job documents)
+RUN useradd --uid 10001 --no-create-home app \
+    && mkdir -p /srv/uploads && chown app /srv/uploads
 USER app
 
 # Cloud Run sets $PORT; locally it defaults to 8080
