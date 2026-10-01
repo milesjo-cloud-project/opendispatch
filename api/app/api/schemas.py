@@ -171,6 +171,8 @@ class JobOut(Out):
     scheduled_start: datetime | None
     quoted_amount_cents: int | None  # office only; None for techs
     created_at: datetime
+    customer_name: str | None = None
+    customer_phone: str | None = None
 
 
 class StatusChangeIn(BaseModel):
@@ -185,6 +187,26 @@ class JobEventOut(Out):
     actor_user_id: UUID | None
     note: str | None
     occurred_at: datetime
+
+
+class TrackingLinkOut(BaseModel):
+    path: str
+    expires_at: datetime
+
+
+class CustomerTrackingOut(BaseModel):
+    title: str
+    status: JobStatus
+    scheduled_start: datetime | None
+    last_updated: datetime | None
+
+
+class JobAttachmentOut(Out):
+    id: UUID
+    filename: str
+    content_type: str
+    size_bytes: int
+    created_at: datetime
 
 
 class BudgetOut(BaseModel):

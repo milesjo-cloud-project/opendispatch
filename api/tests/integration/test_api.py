@@ -277,6 +277,52 @@ def test_other_company_sees_nothing(api, shop):
 
 # --- jobs
 
+def test_create_job_persists_customer_and_defaults(api, shop):
+    created = api.ok("POST", "/jobs", shop["dispatcher"], status=201,
+                     json={"customer_id": shop["customer"]["id"], "title": "Leaking faucet"})
+
+    assert created["customer_id"] == shop["customer"]["id"]
+    assert created["customer_name"] == shop["customer"]["name"]
+    assert created["title"] == "Leaking faucet"
+    assert created["status"] == "requested"
+    assert created["technician_id"] is None
+    assert created["quoted_amount_cents"] is None
+    assert api.ok("GET", f"/jobs/{created['id']}", shop["dispatcher"])["id"] == created["id"]
+
+
+def test_invoice_customer_tracking_link_and_live_status(api, shop):
+    job_id = shop["job"]["id"]
+    for next_status in ["scheduled", "dispatched", "en_route", "in_progress", "completed", "invoiced"]:
+        api.ok("POST", f"/jobs/{job_id}/status", shop["owner"],
+               json={"status": next_status})
+
+    link = api.ok("POST", f"/jobs/{job_id}/tracking-link", shop["dispatcher"], status=201)
+    token = link["path"].rsplit("/", 1)[1]
+    current = api.ok("GET", f"/public/tracking/{token}")
+    assert current["title"] == "Water heater"
+    assert current["status"] == "invoiced"
+    assert current["scheduled_start"] is not None
+    assert api.call("GET", "/public/tracking/not-a-valid-link").status_code == 404
+
+
+def test_job_attachments_accept_image_types_and_pdf(api, shop, tmp_path, monkeypatch):
+    from app.adapters.storage.filesystem import FileSystemStorage
+    from app.api import routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "_storage", FileSystemStorage(str(tmp_path)))
+    path = f"/jobs/{shop['job']['id']}/attachments"
+    image = api.call("POST", path, shop["tech"], files={"file": ("repair.HEIC", b"image-bytes", "image/heic")})
+    pdf = api.call("POST", path, shop["tech"], files={"file": ("invoice.pdf", b"pdf-bytes", "application/pdf")})
+    rejected = api.call("POST", path, shop["tech"], files={"file": ("script.js", b"alert(1)", "text/javascript")})
+
+    assert image.status_code == pdf.status_code == 201
+    assert image.json()["content_type"] == "image/heic"
+    assert pdf.json()["content_type"] == "application/pdf"
+    assert rejected.status_code == 415
+    downloaded = api.call("GET", f"{path}/{image.json()['id']}", shop["tech"])
+    assert downloaded.content == b"image-bytes"
+
+
 def test_tech_sees_only_assigned_jobs_and_no_quote(api, shop):
     unassigned = api.ok("POST", "/jobs", shop["owner"], status=201,
                         json={"customer_id": shop["customer"]["id"], "title": "Unassigned"})

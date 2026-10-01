@@ -95,6 +95,15 @@ logs it out everywhere, and cancels any other reset links.
 Without `SMTP_*` in `.env` (see `.env.example`), the email, link included, is written to the API log
 (`docker compose logs api`), which is all you need locally.
 
+## Job documents and customer tracking links
+
+- `POST /jobs/{id}/attachments` stores a photo (any `image/*`, including HEIC) or a PDF, up to 12 MiB.
+  Anyone who can see the job can upload and download; files always download rather than open in the
+  browser. In compose they live in the `uploads` volume; without Docker, in `./uploads` (`UPLOAD_DIR`).
+- `POST /jobs/{id}/tracking-link` (owners and dispatchers, invoiced or paid jobs) makes a private
+  90-day link, `/track/<token>`, for the customer. It shows only the job title, status, and scheduled
+  time, needs no login, and making a new link replaces the old one. Only a hash of the token is stored.
+
 ## SMS alerts
 
 Budget alerts are texted to owners when all three are true: Twilio is set in `.env`

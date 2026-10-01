@@ -34,6 +34,7 @@ from app.domain.entities import (
     Expense,
     ExpenseStatus,
     Job,
+    JobAttachment,
     JobEvent,
     Technician,
     TimeEntry,
@@ -197,6 +198,36 @@ job_events = Table(
     _same_company_fk("fk_job_events_actor_same_company", "actor_user_id", "users"),
 )
 
+job_attachments = Table(
+    "job_attachments",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False, index=True),
+    Column("job_id", _uuid(), nullable=False, index=True),
+    Column("uploaded_by_user_id", _uuid(), nullable=False),
+    Column("filename", String(255), nullable=False),
+    Column("content_type", String(120), nullable=False),
+    Column("size_bytes", Integer, nullable=False),
+    Column("storage_key", String(64), nullable=False, unique=True),
+    _created_at(),
+    CheckConstraint("size_bytes > 0", name="size_positive"),
+    _same_company_fk("fk_job_attachments_job_same_company", "job_id", "jobs"),
+    _same_company_fk("fk_job_attachments_uploader_same_company", "uploaded_by_user_id", "users"),
+)
+
+job_tracking_links = Table(
+    "job_tracking_links",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False, index=True),
+    Column("job_id", _uuid(), nullable=False, index=True),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("revoked_at", DateTime(timezone=True)),
+    _created_at(),
+    _same_company_fk("fk_job_tracking_links_job_same_company", "job_id", "jobs"),
+)
+
 # A decision (approved/rejected) always has a time; a pending expense never does.
 # decided_by_user_id is NULL when an expense was approved automatically.
 expenses = Table(
@@ -306,6 +337,7 @@ def start_mappers() -> None:
         (Customer, customers),
         (Job, jobs),
         (JobEvent, job_events),
+        (JobAttachment, job_attachments),
         (Expense, expenses),
         (TimeEntry, time_entries),
         (BudgetAlert, budget_alerts),

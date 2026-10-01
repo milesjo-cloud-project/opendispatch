@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # Where the web app lives, for links in emails
     app_base_url: str = "http://localhost:5173"
+    upload_dir: str = "./uploads"
 
     @property
     def email_configured(self) -> bool:
