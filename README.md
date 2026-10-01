@@ -85,6 +85,16 @@ and every other endpoint works as that owner. `POST /auth/login` gets a new toke
 - Owners add people with `POST /users` (with a starting password) and turn a user into a
   technician with `POST /technicians`.
 
+## Forgotten passwords
+
+`POST /auth/password-reset/request` with an email sends a link that works once, for one hour.
+It answers the same whether or not the account exists, and sends at most 5 links per account per hour.
+`POST /auth/password-reset/confirm` with the token and a new password sets it, unlocks the account,
+logs it out everywhere, and cancels any other reset links.
+
+Without `SMTP_*` in `.env` (see `.env.example`), the email, link included, is written to the API log
+(`docker compose logs api`), which is all you need locally.
+
 ## SMS alerts
 
 Budget alerts are texted to owners when all three are true: Twilio is set in `.env`

@@ -5,13 +5,18 @@ Login tokens are random, shown to the client once, and stored only as a SHA-256 
 import hashlib
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.domain.auth import AuthSession, check_password_policy
+from app.domain.auth import (
+    MAX_RESETS_PER_HOUR,
+    AuthSession,
+    PasswordResetToken,
+    check_password_policy,
+)
 from app.domain.entities import Company, User, UserRole
 from app.domain.errors import DomainRuleViolation
 from app.ports.passwords import PasswordHasherPort
@@ -23,6 +28,10 @@ class InvalidCredentials(Exception):
 
 class EmailTaken(Exception):
     pass
+
+
+class InvalidResetToken(Exception):
+    """Unknown, used, or expired. One error for all, like InvalidCredentials."""
 
 
 @dataclass
@@ -153,10 +162,82 @@ def change_password(
         raise InvalidCredentials()
     check_password_policy(new_password)
     user.password_hash = hasher.hash(new_password)
-    session.execute(
-        update(AuthSession)
-        .where(AuthSession.user_id == user.id, AuthSession.id != keep.id,
-               AuthSession.revoked_at.is_(None))
-        .values(revoked_at=datetime.now(timezone.utc))
+    _revoke_other_sessions(session, user, keep)
+    session.flush()
+
+
+def _revoke_other_sessions(session: Session, user: User, keep: AuthSession | None) -> None:
+    stmt = (update(AuthSession)
+            .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(timezone.utc)))
+    if keep is not None:
+        stmt = stmt.where(AuthSession.id != keep.id)
+    session.execute(stmt)
+
+
+@dataclass
+class ResetRequest:
+    user: User
+    token: str
+
+
+def request_password_reset(session: Session, *, email: str, now: datetime | None = None) -> ResetRequest | None:
+    """Make a reset token for this email, or None if there's no such account or it asked too often.
+
+    The API answers the same either way and sends the email in the background,
+    so nobody can use this to find out which emails have accounts.
+    Also works for someone who has never had a password.
+    """
+    now = now or datetime.now(timezone.utc)
+    user = _find_by_email(session, email, lock=True)
+    if user is None:
+        return None
+    recent = session.scalar(
+        select(func.count()).select_from(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user.id,
+               PasswordResetToken.created_at > now - timedelta(hours=1))
     )
+    if recent >= MAX_RESETS_PER_HOUR:
+        return None
+    token = secrets.token_urlsafe(32)
+    session.add(PasswordResetToken(user_id=user.id, company_id=user.company_id,
+                                   token_hash=hash_token(token), created_at=now))
+    session.flush()
+    return ResetRequest(user, token)
+
+
+def reset_email(link: str) -> tuple[str, str]:
+    subject = "Reset your OpenDispatch password"
+    body = (
+        "Someone asked to reset the password for this OpenDispatch account.\n\n"
+        f"To choose a new password, open this link within the next hour:\n{link}\n\n"
+        "If that wasn't you, ignore this email. Your password won't change."
+    )
+    return subject, body
+
+
+def confirm_password_reset(
+    session: Session, hasher: PasswordHasherPort, *, token: str, new_password: str,
+) -> None:
+    """Set the new password, then log the account out everywhere and unlock it."""
+    reset = session.scalars(
+        select(PasswordResetToken).where(PasswordResetToken.token_hash == hash_token(token))
+        .with_for_update()
+    ).one_or_none()
+    if reset is None or not reset.is_usable():
+        raise InvalidResetToken()
+    check_password_policy(new_password)  # before using the token, so a weak password can retry
+
+    user = session.get(User, reset.user_id)
+    now = datetime.now(timezone.utc)
+    reset.use(now)
+    user.password_hash = hasher.hash(new_password)
+    user.record_successful_login()  # clears any lockout
+    # Any other links still in someone's inbox stop working too
+    session.execute(
+        update(PasswordResetToken)
+        .where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))
+        .values(used_at=now)
+    )
+    _revoke_other_sessions(session, user, keep=None)
     session.flush()

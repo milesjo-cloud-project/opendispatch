@@ -67,6 +67,15 @@ class MeUpdate(BaseModel):
     phone: str | None = Field(max_length=32)
 
 
+class ResetRequestIn(BaseModel):
+    email: str = Field(max_length=320)
+
+
+class ResetConfirmIn(BaseModel):
+    token: str = Field(min_length=1, max_length=200)
+    new_password: str = Password()
+
+
 class PasswordChangeIn(BaseModel):
     current_password: str = Password()
     new_password: str = Password()

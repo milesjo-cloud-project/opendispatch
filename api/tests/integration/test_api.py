@@ -9,12 +9,13 @@ import pytest
 from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 
+from app.adapters.email.fake import FakeEmail
 from app.adapters.notifications.fake import FakeNotifier
 from app.adapters.notifications.sms import SmsNotifier
 from app.adapters.passwords.argon2 import Argon2Hasher
 from app.adapters.sms.fake import FakeSms
-from app.api.deps import get_alert_sender, get_hasher, get_session
-from app.domain.auth import MAX_FAILED_LOGINS
+from app.api.deps import get_alert_sender, get_email, get_hasher, get_session
+from app.domain.auth import MAX_FAILED_LOGINS, MAX_RESETS_PER_HOUR
 from app.main import app
 from app.services.spend import send_pending_alerts
 
@@ -33,9 +34,11 @@ class Api:
         self.client = TestClient(app)
         self.sms = FakeSms()
         self.fallback = FakeNotifier()
+        self.email = FakeEmail()
         notifier = SmsNotifier(self.sms, self.fallback)
         app.dependency_overrides[get_session] = lambda: session
         app.dependency_overrides[get_hasher] = lambda: FAST_HASHER
+        app.dependency_overrides[get_email] = lambda: self.email
         app.dependency_overrides[get_alert_sender] = lambda: (lambda: send_pending_alerts(session, notifier))
 
     def call(self, method, path, token=None, **kw):
@@ -146,6 +149,91 @@ def test_change_password_logs_out_other_devices(api):
     assert api.call("GET", "/me", token).status_code == 200
     assert api.call("GET", "/me", other).status_code == 401
     api.ok("POST", "/auth/login", json={"email": user["email"], "password": "a brand new password"})
+
+
+# --- password reset
+
+NEW_PASSWORD = "a fresh reset password"
+
+
+def request_reset(api, email):
+    return api.ok("POST", "/auth/password-reset/request", status=202, json={"email": email})
+
+
+def reset_token_from_email(api, email):
+    to, _, body = api.email.sent[-1]
+    assert to == email
+    return body.split("#token=", 1)[1].split()[0]
+
+
+def test_reset_answers_the_same_for_unknown_emails(api):
+    _, user = api.signup()
+    known = request_reset(api, user["email"])
+    unknown = request_reset(api, f"ghost-{uuid4()}@example.com")
+    assert known == unknown
+    assert len(api.email.sent) == 1  # only the real account gets mail
+    assert "/reset-password#token=" in api.email.sent[0][2]
+
+
+def test_reset_sets_new_password_and_logs_out_everywhere(api):
+    token, user = api.signup()
+    request_reset(api, user["email"].upper())  # email match ignores case
+    reset = reset_token_from_email(api, user["email"])
+
+    api.ok("POST", "/auth/password-reset/confirm", status=204,
+           json={"token": reset, "new_password": NEW_PASSWORD})
+    assert api.call("GET", "/me", token).status_code == 401
+    old = api.call("POST", "/auth/login", json={"email": user["email"], "password": PASSWORD})
+    assert old.status_code == 401
+    api.ok("POST", "/auth/login", json={"email": user["email"], "password": NEW_PASSWORD})
+
+    again = api.call("POST", "/auth/password-reset/confirm",
+                     json={"token": reset, "new_password": "yet another password"})
+    assert again.status_code == 400
+
+
+def test_reset_rejects_bad_tokens_and_weak_passwords(api):
+    _, user = api.signup()
+    bogus = api.call("POST", "/auth/password-reset/confirm",
+                     json={"token": "not-a-real-token", "new_password": NEW_PASSWORD})
+    assert bogus.status_code == 400
+
+    request_reset(api, user["email"])
+    reset = reset_token_from_email(api, user["email"])
+    weak = api.call("POST", "/auth/password-reset/confirm", json={"token": reset, "new_password": "short"})
+    assert weak.status_code == 422
+    # A weak attempt doesn't use up the link
+    api.ok("POST", "/auth/password-reset/confirm", status=204,
+           json={"token": reset, "new_password": NEW_PASSWORD})
+
+
+def test_using_one_reset_link_cancels_the_others(api):
+    _, user = api.signup()
+    request_reset(api, user["email"])
+    first = reset_token_from_email(api, user["email"])
+    request_reset(api, user["email"])
+    second = reset_token_from_email(api, user["email"])
+
+    api.ok("POST", "/auth/password-reset/confirm", status=204, json={"token": second, "new_password": NEW_PASSWORD})
+    r = api.call("POST", "/auth/password-reset/confirm", json={"token": first, "new_password": NEW_PASSWORD})
+    assert r.status_code == 400
+
+
+def test_reset_unlocks_a_locked_account(api):
+    _, user = api.signup()
+    for _ in range(MAX_FAILED_LOGINS):
+        api.call("POST", "/auth/login", json={"email": user["email"], "password": "wrong password!"})
+    request_reset(api, user["email"])
+    api.ok("POST", "/auth/password-reset/confirm", status=204,
+           json={"token": reset_token_from_email(api, user["email"]), "new_password": NEW_PASSWORD})
+    api.ok("POST", "/auth/login", json={"email": user["email"], "password": NEW_PASSWORD})
+
+
+def test_reset_requests_are_limited_per_hour(api):
+    _, user = api.signup()
+    for _ in range(MAX_RESETS_PER_HOUR + 2):
+        request_reset(api, user["email"])  # same answer every time
+    assert len(api.email.sent) == MAX_RESETS_PER_HOUR
 
 
 def test_phone_on_my_account(api):

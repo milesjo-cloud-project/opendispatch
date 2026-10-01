@@ -1,13 +1,27 @@
 """Sign up, log in, log out, and the logged-in user's own account."""
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import Actor, current_actor, get_hasher, get_session, technician_for
-from app.api.schemas import LoginIn, MeOut, MeUpdate, PasswordChangeIn, SignupIn, TokenOut
+from app.api.deps import Actor, current_actor, get_email, get_hasher, get_session, technician_for
+from app.api.schemas import (
+    LoginIn,
+    MeOut,
+    MeUpdate,
+    PasswordChangeIn,
+    ResetConfirmIn,
+    ResetRequestIn,
+    SignupIn,
+    TokenOut,
+)
+from app.config import settings
+from app.ports.email import EmailPort
 from app.ports.passwords import PasswordHasherPort
 from app.services import auth
 
 router = APIRouter(tags=["auth"])
+log = logging.getLogger("opendispatch.auth")
 
 
 def me_out(user, technician) -> MeOut:
@@ -40,6 +54,41 @@ def login(body: LoginIn, session: Session = Depends(get_session),
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password") from None
     session.commit()
     return token_out(result, technician_for(session, result.user))
+
+
+def _send_quietly(email: EmailPort, to: str, subject: str, body: str) -> None:
+    # Runs after the response; a mail server hiccup must not surface as an error to anyone.
+    try:
+        email.send(to, subject, body)
+    except Exception:
+        log.exception("Password reset email failed to send")
+
+
+@router.post("/auth/password-reset/request", status_code=202)
+def request_password_reset(body: ResetRequestIn, background: BackgroundTasks,
+                           session: Session = Depends(get_session),
+                           email: EmailPort = Depends(get_email)):
+    """Email a one-hour reset link. Answers the same whether or not the account exists."""
+    request = auth.request_password_reset(session, email=body.email)
+    session.commit()
+    if request is not None:
+        # After '#', so the token never reaches a server log or a Referer header
+        link = f"{settings.app_base_url.rstrip('/')}/reset-password#token={request.token}"
+        subject, text = auth.reset_email(link)
+        background.add_task(_send_quietly, email, request.user.email, subject, text)
+    return {"detail": "If that email has an account, a reset link is on its way."}
+
+
+@router.post("/auth/password-reset/confirm", status_code=204)
+def confirm_password_reset(body: ResetConfirmIn, session: Session = Depends(get_session),
+                           hasher: PasswordHasherPort = Depends(get_hasher)):
+    """Set a new password from a reset link. Logs the account out everywhere."""
+    try:
+        auth.confirm_password_reset(session, hasher, token=body.token, new_password=body.new_password)
+    except auth.InvalidResetToken:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This reset link is invalid or has expired") from None
+    session.commit()
+    return Response(status_code=204)
 
 
 @router.post("/auth/logout", status_code=204)

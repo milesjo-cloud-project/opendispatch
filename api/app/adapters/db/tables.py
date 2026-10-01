@@ -25,7 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import registry
 
-from app.domain.auth import AuthSession
+from app.domain.auth import AuthSession, PasswordResetToken
 from app.domain.budget import BudgetAlert, BudgetLevel
 from app.domain.entities import (
     DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS,
@@ -278,6 +278,19 @@ auth_sessions = Table(
     _same_company_fk("fk_auth_sessions_user_same_company", "user_id", "users"),
 )
 
+password_reset_tokens = Table(
+    "password_reset_tokens",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False),
+    Column("user_id", _uuid(), nullable=False, index=True),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("used_at", DateTime(timezone=True)),
+    _created_at(),
+    _same_company_fk("fk_password_reset_tokens_user_same_company", "user_id", "users"),
+)
+
 _mapped = False
 
 
@@ -297,6 +310,7 @@ def start_mappers() -> None:
         (TimeEntry, time_entries),
         (BudgetAlert, budget_alerts),
         (AuthSession, auth_sessions),
+        (PasswordResetToken, password_reset_tokens),
     ]:
         mapper_registry.map_imperatively(cls, table)
     _mapped = True
