@@ -1,8 +1,8 @@
 fastapi==0.141.*
-uvicorn[standard]==0.32.*
+uvicorn[standard]==0.54.*
 psycopg[binary]==3.3.*
 pydantic-settings==2.6.*
-sqlalchemy==2.0.*
+sqlalchemy==2.1.*
 alembic==1.20.*
 argon2-cffi==23.*
 httpx==0.28.*
