@@ -89,3 +89,18 @@ def test_session_expires_and_revokes():
     assert not s.is_active(s.expires_at)
     s.revoke()
     assert not s.is_active()
+
+
+def test_reset_token_is_single_use_and_expires():
+    from app.domain.auth import RESET_LIFETIME, PasswordResetToken
+
+    t = PasswordResetToken(user_id=uuid4(), company_id=uuid4(), token_hash="h", created_at=NOW)
+    assert t.expires_at == NOW + RESET_LIFETIME
+    assert not t.is_usable(NOW + RESET_LIFETIME)
+    with pytest.raises(DomainRuleViolation):
+        t.use(NOW + RESET_LIFETIME)
+
+    t.use(NOW + timedelta(minutes=5))
+    assert not t.is_usable(NOW + timedelta(minutes=6))
+    with pytest.raises(DomainRuleViolation):
+        t.use(NOW + timedelta(minutes=6))

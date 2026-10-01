@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.adapters.db.session import make_session_factory
+from app.adapters.email.log import LogEmail
+from app.adapters.email.smtp import SmtpEmail
 from app.adapters.notifications.log import LogNotifier
 from app.adapters.notifications.sms import SmsNotifier
 from app.adapters.passwords.argon2 import Argon2Hasher
@@ -17,6 +19,7 @@ from app.config import settings
 from app.domain.access import is_office, is_owner
 from app.domain.auth import AuthSession
 from app.domain.entities import Technician, User
+from app.ports.email import EmailPort
 from app.ports.notifications import NotificationPort
 from app.ports.passwords import PasswordHasherPort
 from app.services import auth
@@ -50,6 +53,15 @@ def get_notifier() -> NotificationPort:
     sms = TwilioSms(settings.twilio_account_sid, settings.twilio_auth_token.get_secret_value(),
                     settings.twilio_from_number)
     return SmsNotifier(sms, fallback)
+
+
+@lru_cache
+def get_email() -> EmailPort:
+    if not settings.email_configured:
+        return LogEmail(show_body=settings.is_local)
+    password = settings.smtp_password.get_secret_value() if settings.smtp_password else None
+    return SmtpEmail(settings.smtp_host, settings.smtp_port, settings.smtp_username, password,
+                     settings.email_from)
 
 
 def get_alert_sender(notifier: NotificationPort = Depends(get_notifier)) -> Callable[[], None]:

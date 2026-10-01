@@ -70,3 +70,33 @@ class AuthSession:
     def revoke(self) -> None:
         if self.revoked_at is None:
             self.revoked_at = _now()
+
+
+RESET_LIFETIME = timedelta(hours=1)
+MAX_RESETS_PER_HOUR = 5
+
+
+@dataclass(eq=False)
+class PasswordResetToken:
+    """A one-time link to set a new password. Like login tokens, only the hash is stored."""
+    user_id: UUID
+    company_id: UUID
+    token_hash: str
+    expires_at: datetime | None = None  # defaults to created_at + RESET_LIFETIME
+    used_at: datetime | None = None
+    id: UUID = field(default_factory=uuid4)
+    created_at: datetime = field(default_factory=_now)
+
+    def __post_init__(self) -> None:
+        if self.expires_at is None:
+            self.expires_at = self.created_at + RESET_LIFETIME
+
+    def is_usable(self, now: datetime | None = None) -> bool:
+        now = now or _now()
+        return self.used_at is None and now < self.expires_at
+
+    def use(self, now: datetime | None = None) -> None:
+        now = now or _now()
+        if not self.is_usable(now):
+            raise DomainRuleViolation("This reset link is invalid or has expired")
+        self.used_at = now

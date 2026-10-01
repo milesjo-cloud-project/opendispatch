@@ -15,6 +15,20 @@ class Settings(BaseSettings):
     twilio_auth_token: SecretStr | None = None
     twilio_from_number: str | None = None
 
+    # Email (password resets). Leave SMTP_HOST unset and emails go to the API log instead.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    email_from: str = "OpenDispatch <no-reply@localhost>"
+
+    # Where the web app lives, for links in emails
+    app_base_url: str = "http://localhost:5173"
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.smtp_host)
+
     @property
     def sms_configured(self) -> bool:
         return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_from_number)
