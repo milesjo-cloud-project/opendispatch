@@ -4,13 +4,17 @@ Uses SQLAlchemy "imperative mapping" so domain/ stays free of any database code.
 Call start_mappers() once at app startup (and in tests) before using a Session.
 """
 from sqlalchemy import (
+    BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     MetaData,
     String,
     Table,
@@ -21,7 +25,18 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import registry
 
-from app.domain.entities import Company, Customer, Job, JobEvent, Technician, User, UserRole
+from app.domain.entities import (
+    DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS,
+    Company,
+    Customer,
+    Expense,
+    ExpenseStatus,
+    Job,
+    JobEvent,
+    Technician,
+    User,
+    UserRole,
+)
 from app.domain.job_status import JobStatus
 
 # Stable constraint names, so migrations and downgrades don't break.
@@ -87,7 +102,11 @@ companies = Table(
     metadata,
     Column("id", _uuid(), primary_key=True),
     Column("name", String(200), nullable=False),
+    # Cents. Expenses above this wait for the owner.
+    Column("expense_approval_limit_cents", Integer, nullable=False,
+           server_default=str(DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS)),
     _created_at(),
+    CheckConstraint("expense_approval_limit_cents >= 0", name="approval_limit_not_negative"),
 )
 
 users = Table(
@@ -141,7 +160,9 @@ jobs = Table(
     Column("description", Text),
     Column("status", _status_column_type("job_status"), nullable=False),
     Column("scheduled_start", DateTime(timezone=True)),
+    Column("quoted_amount_cents", BigInteger),
     _created_at(),
+    CheckConstraint("quoted_amount_cents >= 0", name="quote_not_negative"),
     Index("ix_jobs_company_status", "company_id", "status"),
     _company_scoped_key("jobs"),
     _same_company_fk("fk_jobs_customer_same_company", "customer_id", "customers"),
@@ -165,6 +186,33 @@ job_events = Table(
     _same_company_fk("fk_job_events_actor_same_company", "actor_user_id", "users"),
 )
 
+# A decision (approved/rejected) always has a time; a pending expense never does.
+# decided_by_user_id is NULL when an expense was approved automatically.
+expenses = Table(
+    "expenses",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False),
+    Column("job_id", _uuid(), nullable=False, index=True),
+    Column("submitted_by_user_id", _uuid(), nullable=False),
+    Column("amount_cents", BigInteger, nullable=False),
+    Column("vendor", String(200)),
+    Column("description", Text),
+    Column("spent_on", Date),
+    Column("status", _enum_type(ExpenseStatus, "expense_status"), nullable=False),
+    Column("decided_by_user_id", _uuid()),
+    Column("decided_at", DateTime(timezone=True)),
+    Column("decision_note", Text),
+    _created_at(),
+    Index("ix_expenses_company_status", "company_id", "status"),
+    CheckConstraint("amount_cents > 0", name="amount_positive"),
+    CheckConstraint("(status = 'pending') = (decided_at IS NULL)", name="decided_at_matches_status"),
+    CheckConstraint("status <> 'pending' OR decided_by_user_id IS NULL", name="pending_has_no_decider"),
+    _same_company_fk("fk_expenses_job_same_company", "job_id", "jobs"),
+    _same_company_fk("fk_expenses_submitter_same_company", "submitted_by_user_id", "users"),
+    _same_company_fk("fk_expenses_decider_same_company", "decided_by_user_id", "users"),
+)
+
 _mapped = False
 
 
@@ -180,6 +228,7 @@ def start_mappers() -> None:
         (Customer, customers),
         (Job, jobs),
         (JobEvent, job_events),
+        (Expense, expenses),
     ]:
         mapper_registry.map_imperatively(cls, table)
     _mapped = True
