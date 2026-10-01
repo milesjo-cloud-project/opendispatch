@@ -55,6 +55,19 @@ Cancelled: reachable from anything before Completed. Paid and Cancelled are fina
 The table lives in `api/app/domain/job_status.py`. The only way to change a job's status is
 `job.transition_to(...)`, which returns a `JobEvent` to save in the same transaction.
 
+## Expenses and job budgets
+
+Money is stored as whole cents (`50_000` = $500.00), never floats.
+
+- `job.add_expense(company, submitted_by, amount_cents, ...)` is the only way to record spend.
+  Each expense belongs to exactly one job. Paid and cancelled jobs don't take new expenses.
+- Expenses at or under the company's `expense_approval_limit_cents` ($500 by default) are
+  approved on the spot. Anything over waits until the owner calls `approve()` or `reject()`.
+  An owner's own spend is never held.
+- `job_budget(job, expenses)` in `api/app/domain/budget.py` compares spend (approved + pending,
+  not rejected) against `job.quoted_amount_cents`. `alert_for(...)` tells you when a new
+  expense crosses 80% or 100%, once per threshold. Budgets warn; they never block spend.
+
 ## Database migrations
 
 After changing `api/app/adapters/db/tables.py`:
