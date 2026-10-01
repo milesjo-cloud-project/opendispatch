@@ -1,14 +1,24 @@
 # Weekly PRs for dependency updates; security fixes arrive as soon as they're published.
+# Groups keep packages that must move together (react + react-dom, vite + its plugin,
+# the Google provider in all three Terraform folders) in one PR, so CI tests them together.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /api
     schedule:
       interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /web
     schedule:
       interval: weekly
+    groups:
+      react:
+        patterns: ["react", "react-dom"]
+      vite:
+        patterns: ["vite", "@vitejs/*"]
   - package-ecosystem: docker
     directories: [/api, /web]
     schedule:
@@ -17,7 +27,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: terraform
     directories: [/infra/terraform/modules/app, /infra/terraform/envs/dev, /infra/terraform/envs/prod]
     schedule:
       interval: weekly
+    groups:
+      google-provider:
+        patterns: ["hashicorp/google*"]
