@@ -121,14 +121,15 @@ def send_pending_alerts(session: Session, notifier: NotificationPort, limit: int
     sent = 0
     for alert in pending:
         owners = session.scalars(
-            select(User.email).where(User.company_id == alert.company_id, User.role == UserRole.OWNER)
+            select(User).where(User.company_id == alert.company_id, User.role == UserRole.OWNER)
         ).all()
         if not owners:
             log.warning("Budget alert %s has no owner to go to; will retry", alert.id)
             continue
+        company = session.get(Company, alert.company_id)
         job = session.get(Job, alert.job_id)
         try:
-            notifier.send_budget_alert(list(owners), alert, job)
+            notifier.send_budget_alert(company, list(owners), alert, job)
         except Exception:
             log.exception("Budget alert %s failed to send; will retry", alert.id)
             continue

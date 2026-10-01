@@ -8,8 +8,13 @@ The database side (only loading rows a user may see) lives in adapters/db/querie
 and must agree with these rules; tests check both.
 """
 from .entities import Expense, Job, Technician, User, UserRole
+from .job_status import JobStatus
 
 OFFICE_ROLES = frozenset({UserRole.OWNER, UserRole.DISPATCHER})
+
+# Moves a tech makes from the field on their own job. Scheduling, dispatching,
+# cancelling, invoicing and marking paid are office work.
+TECH_STATUS_MOVES = frozenset({JobStatus.EN_ROUTE, JobStatus.IN_PROGRESS, JobStatus.COMPLETED})
 
 
 def sees_all_jobs(user: User) -> bool:
@@ -28,6 +33,24 @@ def can_view_job(user: User, job: Job, technician: Technician | None = None) -> 
         and technician.company_id == user.company_id
         and job.technician_id == technician.id
     )
+
+
+def is_office(user: User) -> bool:
+    return user.role in OFFICE_ROLES
+
+
+def is_owner(user: User) -> bool:
+    """Company settings, users, technicians' pay rates, and expense approvals."""
+    return user.role == UserRole.OWNER
+
+
+def can_change_status(
+    user: User, job: Job, target: JobStatus, technician: Technician | None = None
+) -> bool:
+    """Whether this person may ask for the move. Whether the move itself is legal is job_status.py's call."""
+    if not can_view_job(user, job, technician):
+        return False
+    return is_office(user) or target in TECH_STATUS_MOVES
 
 
 def can_view_budget(user: User, job: Job) -> bool:

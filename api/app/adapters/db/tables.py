@@ -25,6 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import registry
 
+from app.domain.auth import AuthSession
 from app.domain.budget import BudgetAlert, BudgetLevel
 from app.domain.entities import (
     DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS,
@@ -107,6 +108,7 @@ companies = Table(
     # Cents. Expenses above this wait for the owner.
     Column("expense_approval_limit_cents", Integer, nullable=False,
            server_default=str(DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS)),
+    Column("sms_alerts_enabled", Boolean, nullable=False, server_default="false"),
     _created_at(),
     CheckConstraint("expense_approval_limit_cents >= 0", name="approval_limit_not_negative"),
 )
@@ -118,7 +120,12 @@ users = Table(
     _company_fk(),
     Column("email", String(320), nullable=False),
     Column("role", _enum_type(UserRole, "user_role"), nullable=False),
+    Column("phone", String(16)),
+    Column("password_hash", String(255)),
+    Column("failed_logins", Integer, nullable=False, server_default="0"),
+    Column("locked_until", DateTime(timezone=True)),
     _created_at(),
+    CheckConstraint(r"phone ~ '^\+[1-9][0-9]{7,14}$'", name="phone_e164"),
     _company_scoped_key("users"),
 )
 # Case-insensitive: Bob@x.com and bob@x.com can't be two accounts.
@@ -257,6 +264,20 @@ budget_alerts = Table(
 Index("ix_budget_alerts_unsent", budget_alerts.c.created_at,
       postgresql_where=budget_alerts.c.sent_at.is_(None))
 
+# Only a SHA-256 of each token is stored, so a leaked table can't be used to log in.
+auth_sessions = Table(
+    "auth_sessions",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False),
+    Column("user_id", _uuid(), nullable=False, index=True),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("revoked_at", DateTime(timezone=True)),
+    _created_at(),
+    _same_company_fk("fk_auth_sessions_user_same_company", "user_id", "users"),
+)
+
 _mapped = False
 
 
@@ -275,6 +296,7 @@ def start_mappers() -> None:
         (Expense, expenses),
         (TimeEntry, time_entries),
         (BudgetAlert, budget_alerts),
+        (AuthSession, auth_sessions),
     ]:
         mapper_registry.map_imperatively(cls, table)
     _mapped = True

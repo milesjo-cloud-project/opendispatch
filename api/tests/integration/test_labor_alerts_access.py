@@ -115,7 +115,7 @@ def test_alerts_go_to_owners_once(session, a, job):
     mine = [s for s in notifier.sent if s[1].id == result.alert.id]
     assert len(mine) == 1
     to, alert, sent_job = mine[0]
-    assert to == [a.owner.email]
+    assert [u.email for u in to] == [a.owner.email]
     assert sent_job.id == job.id
     assert alert.sent_at is not None
 

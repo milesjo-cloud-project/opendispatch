@@ -1,6 +1,7 @@
 from fastapi import Depends, FastAPI, Response
 
 from app.adapters.db.postgres import PostgresHealth
+from app.api import errors, routes_admin, routes_auth, routes_jobs
 from app.config import settings
 from app.ports.health import DatabaseHealthPort
 
@@ -11,6 +12,10 @@ app = FastAPI(
     redoc_url="/redoc" if settings.is_local else None,
     openapi_url="/openapi.json" if settings.is_local else None,
 )
+errors.register(app)
+app.include_router(routes_auth.router)
+app.include_router(routes_admin.router)
+app.include_router(routes_jobs.router)
 
 
 def get_db_health() -> DatabaseHealthPort:

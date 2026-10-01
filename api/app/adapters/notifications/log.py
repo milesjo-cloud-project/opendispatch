@@ -1,23 +1,16 @@
-"""Writes notifications to the API log. The local-dev default until email/SMS adapters exist."""
+"""Writes notifications to the API log. Used locally, and for anyone SMS doesn't reach."""
 
 import logging
 
-from app.domain.budget import BudgetAlert, BudgetLevel
-from app.domain.entities import Job
+from app.domain.budget import BudgetAlert
+from app.domain.entities import Company, Job, User
+
+from .messages import budget_alert_text
 
 log = logging.getLogger("opendispatch.notifications")
 
 
-def _dollars(cents: int) -> str:
-    return f"${cents / 100:,.2f}"
-
-
 class LogNotifier:
-    def send_budget_alert(self, to: list[str], alert: BudgetAlert, job: Job) -> None:
-        what = "is over budget" if alert.level == BudgetLevel.OVER else "has used 80% of its quote"
-        log.warning(
-            # Recipient count, not addresses: email addresses don't belong in logs.
-            "To %d owner(s): job %s '%s' %s (%s spent of %s quoted)",
-            len(to), job.id, job.title, what,
-            _dollars(alert.spent_cents), _dollars(alert.quoted_cents),
-        )
+    def send_budget_alert(self, company: Company, to: list[User], alert: BudgetAlert, job: Job) -> None:
+        # Recipient count, not addresses: contact details don't belong in logs.
+        log.warning("To %d owner(s), job %s: %s", len(to), job.id, budget_alert_text(alert, job))

@@ -74,6 +74,23 @@ Money is stored as whole cents (`50_000` = $500.00), never floats.
   crossed. After committing, `send_pending_alerts(session, notifier)` sends them to the owners.
   Locally the notifier just writes to the API log; email/SMS adapters come later.
 
+## Logging in and using the API
+
+Open http://localhost:8080/docs, call `POST /auth/signup` with a company name, email and password
+(12+ characters), and copy the `token` from the response. Click **Authorize**, paste the token,
+and every other endpoint works as that owner. `POST /auth/login` gets a new token later.
+
+- Tokens last 14 days. `POST /auth/logout` ends one; changing your password ends all the others.
+- 10 wrong passwords in a row lock the account for 15 minutes.
+- Owners add people with `POST /users` (with a starting password) and turn a user into a
+  technician with `POST /technicians`.
+
+## SMS alerts
+
+Budget alerts are texted to owners when all three are true: Twilio is set in `.env`
+(`TWILIO_*`, see `.env.example`), the company has `sms_alerts_enabled` on (`PATCH /company`),
+and the owner has a phone number (`PATCH /me`). Anyone else gets the alert in the API log.
+
 ## Who sees what
 
 Rules live in `api/app/domain/access.py`; `api/app/adapters/db/queries.py` applies the same rules
