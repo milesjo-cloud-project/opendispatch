@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +9,15 @@ class Settings(BaseSettings):
 
     app_env: str = "local"
     database_url: str = "postgresql://opendispatch:change-me@127.0.0.1:5432/opendispatch"
+
+    # SMS alerts. Leave unset and alerts go to the API log instead.
+    twilio_account_sid: str | None = None
+    twilio_auth_token: SecretStr | None = None
+    twilio_from_number: str | None = None
+
+    @property
+    def sms_configured(self) -> bool:
+        return bool(self.twilio_account_sid and self.twilio_auth_token and self.twilio_from_number)
 
     @property
     def is_local(self) -> bool:

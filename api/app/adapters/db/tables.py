@@ -25,6 +25,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import registry
 
+from app.domain.auth import AuthSession
+from app.domain.budget import BudgetAlert, BudgetLevel
 from app.domain.entities import (
     DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS,
     Company,
@@ -34,6 +36,7 @@ from app.domain.entities import (
     Job,
     JobEvent,
     Technician,
+    TimeEntry,
     User,
     UserRole,
 )
@@ -105,6 +108,7 @@ companies = Table(
     # Cents. Expenses above this wait for the owner.
     Column("expense_approval_limit_cents", Integer, nullable=False,
            server_default=str(DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS)),
+    Column("sms_alerts_enabled", Boolean, nullable=False, server_default="false"),
     _created_at(),
     CheckConstraint("expense_approval_limit_cents >= 0", name="approval_limit_not_negative"),
 )
@@ -116,7 +120,12 @@ users = Table(
     _company_fk(),
     Column("email", String(320), nullable=False),
     Column("role", _enum_type(UserRole, "user_role"), nullable=False),
+    Column("phone", String(16)),
+    Column("password_hash", String(255)),
+    Column("failed_logins", Integer, nullable=False, server_default="0"),
+    Column("locked_until", DateTime(timezone=True)),
     _created_at(),
+    CheckConstraint(r"phone ~ '^\+[1-9][0-9]{7,14}$'", name="phone_e164"),
     _company_scoped_key("users"),
 )
 # Case-insensitive: Bob@x.com and bob@x.com can't be two accounts.
@@ -131,7 +140,9 @@ technicians = Table(
     Column("display_name", String(200), nullable=False),
     Column("phone", String(40)),
     Column("active", Boolean, nullable=False, default=True),
+    Column("hourly_rate_cents", Integer),
     _created_at(),
+    CheckConstraint("hourly_rate_cents >= 0", name="rate_not_negative"),
     _company_scoped_key("technicians"),
     _same_company_fk("fk_technicians_user_same_company", "user_id", "users"),
 )
@@ -213,6 +224,60 @@ expenses = Table(
     _same_company_fk("fk_expenses_decider_same_company", "decided_by_user_id", "users"),
 )
 
+# The rate is copied from the technician when time is logged, so raises don't rewrite history.
+time_entries = Table(
+    "time_entries",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False),
+    Column("job_id", _uuid(), nullable=False, index=True),
+    Column("technician_id", _uuid(), nullable=False, index=True),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    Column("ended_at", DateTime(timezone=True), nullable=False),
+    Column("hourly_rate_cents", Integer, nullable=False),
+    Column("note", Text),
+    _created_at(),
+    CheckConstraint("ended_at > started_at", name="ends_after_start"),
+    CheckConstraint("ended_at - started_at <= interval '24 hours'", name="at_most_24_hours"),
+    CheckConstraint("hourly_rate_cents >= 0", name="rate_not_negative"),
+    _same_company_fk("fk_time_entries_job_same_company", "job_id", "jobs"),
+    _same_company_fk("fk_time_entries_technician_same_company", "technician_id", "technicians"),
+)
+
+# Doubles as an outbox: rows are written with the spend that caused them and
+# sent afterwards. The unique key means each job warns once and goes over once.
+budget_alerts = Table(
+    "budget_alerts",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False),
+    Column("job_id", _uuid(), nullable=False),
+    Column("level", _enum_type(BudgetLevel, "budget_level"), nullable=False),
+    Column("quoted_cents", BigInteger, nullable=False),
+    Column("spent_cents", BigInteger, nullable=False),
+    Column("sent_at", DateTime(timezone=True)),
+    _created_at(),
+    UniqueConstraint("job_id", "level", name="uq_budget_alerts_job_id_level"),
+    CheckConstraint("level IN ('warning', 'over')", name="alertable_level"),
+    _same_company_fk("fk_budget_alerts_job_same_company", "job_id", "jobs"),
+)
+Index("ix_budget_alerts_unsent", budget_alerts.c.created_at,
+      postgresql_where=budget_alerts.c.sent_at.is_(None))
+
+# Only a SHA-256 of each token is stored, so a leaked table can't be used to log in.
+auth_sessions = Table(
+    "auth_sessions",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False),
+    Column("user_id", _uuid(), nullable=False, index=True),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("revoked_at", DateTime(timezone=True)),
+    _created_at(),
+    _same_company_fk("fk_auth_sessions_user_same_company", "user_id", "users"),
+)
+
 _mapped = False
 
 
@@ -229,6 +294,9 @@ def start_mappers() -> None:
         (Job, jobs),
         (JobEvent, job_events),
         (Expense, expenses),
+        (TimeEntry, time_entries),
+        (BudgetAlert, budget_alerts),
+        (AuthSession, auth_sessions),
     ]:
         mapper_registry.map_imperatively(cls, table)
     _mapped = True
