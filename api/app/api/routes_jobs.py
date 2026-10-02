@@ -114,20 +114,27 @@ def get_job(job_id: UUID, actor: Actor = Depends(current_actor), session: Sessio
 @router.patch("/jobs/{job_id}", response_model=JobOut)
 def update_job(job_id: UUID, body: JobUpdate, actor: Actor = Depends(office_actor),
                session: Session = Depends(get_session)):
-    """Edit details, assign a technician, set the start time or the quote. Status has its own endpoint."""
+    """Edit details, assign a technician, set the start time or the quote. Status has its own endpoint.
+
+    What can change depends on the job's stage (see Job.assign/reschedule/set_quote);
+    anything else answers 422 and nothing is saved."""
     job = _job(session, actor, job_id)
     sent = body.model_fields_set
     _check_refs(session, job.company_id, technician_id=body.technician_id if "technician_id" in sent else None)
-    if "title" in sent and body.title is not None:
-        job.title = body.title
-    if "description" in sent:
-        job.description = body.description
-    if "technician_id" in sent:
-        job.technician_id = body.technician_id
-    if "scheduled_start" in sent:
-        job.scheduled_start = body.scheduled_start
-    if "quoted_amount_cents" in sent:
-        job.set_quote(body.quoted_amount_cents)
+    try:
+        if "title" in sent and body.title is not None:
+            job.rename(body.title)
+        if "description" in sent:
+            job.set_description(body.description)
+        if "technician_id" in sent:
+            job.assign(body.technician_id)
+        if "scheduled_start" in sent:
+            job.reschedule(body.scheduled_start)
+        if "quoted_amount_cents" in sent:
+            job.set_quote(body.quoted_amount_cents)
+    except DomainRuleViolation:
+        session.rollback()  # undo the edits that were allowed before the one that wasn't
+        raise
     session.commit()
     return _job_out(job, actor, session)
 
