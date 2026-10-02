@@ -98,6 +98,12 @@ and every other endpoint works as that owner. `POST /auth/login` gets a new toke
 - 10 wrong passwords in a row lock the account for 15 minutes.
 - Owners add people with `POST /users` (with a starting password) and turn a user into a
   technician with `POST /technicians`.
+- When someone leaves, an owner calls `POST /users/{id}/disable` (**Disable** on the Team page).
+  It signs them out everywhere, cancels their reset links, stops them signing in, and takes their
+  technician profile off the schedule. Their jobs and history stay. `POST /users/{id}/enable`
+  undoes it. Owners can't disable themselves.
+- Deactivating a technician (`PATCH /technicians/{id}`) only takes them off the schedule: new jobs
+  can't be assigned to them, but they can still sign in.
 
 ## Forgotten passwords
 

@@ -243,6 +243,85 @@ def test_phone_on_my_account(api):
     assert api.ok("PATCH", "/me", token, json={"phone": None})["phone"] is None
 
 
+# --- disabling accounts
+
+def login_as(api, email, password=PASSWORD):
+    return api.call("POST", "/auth/login", json={"email": email, "password": password})
+
+
+def test_disabled_user_is_signed_out_and_cant_get_back_in(api, shop):
+    tech_user = api.ok("GET", "/me", shop["tech"])
+    other_device = login_as(api, tech_user["email"]).json()["token"]
+    request_reset(api, tech_user["email"])
+    pending_reset = reset_token_from_email(api, tech_user["email"])
+
+    out = api.ok("POST", f"/users/{tech_user['id']}/disable", shop["owner"])
+    assert out["disabled_at"] is not None
+    for token in (shop["tech"], other_device):
+        assert api.call("GET", "/me", token).status_code == 401
+    # Same answer as a wrong password, so this doesn't reveal the account exists
+    assert login_as(api, tech_user["email"]).json() == {"detail": "Invalid email or password"}
+    # No reset email, and links sent before the disable are dead
+    sent = len(api.email.sent)
+    request_reset(api, tech_user["email"])
+    assert len(api.email.sent) == sent
+    r = api.call("POST", "/auth/password-reset/confirm", json={"token": pending_reset, "new_password": NEW_PASSWORD})
+    assert r.status_code == 400
+    # Off the schedule, but their job and its history stay
+    techs = api.ok("GET", "/technicians", shop["owner"])
+    assert [t["active"] for t in techs if t["id"] == shop["tech_profile"]["id"]] == [False]
+    assert api.ok("GET", f"/jobs/{shop['job']['id']}", shop["owner"])["technician_id"] == shop["tech_profile"]["id"]
+
+    back = api.ok("POST", f"/users/{tech_user['id']}/enable", shop["owner"])
+    assert back["disabled_at"] is None
+    assert login_as(api, tech_user["email"]).status_code == 200
+    r = api.call("POST", "/auth/password-reset/confirm", json={"token": pending_reset, "new_password": NEW_PASSWORD})
+    assert r.status_code == 400  # enabling doesn't bring old links back
+
+
+def test_who_can_disable(api, shop):
+    tech_id = api.ok("GET", "/me", shop["tech"])["id"]
+    owner_id = shop["owner_user"]["id"]
+    assert api.call("POST", f"/users/{tech_id}/disable", shop["dispatcher"]).status_code == 403
+    assert api.call("POST", f"/users/{tech_id}/disable", shop["tech"]).status_code == 403
+    assert api.call("POST", f"/users/{owner_id}/disable", shop["owner"]).status_code == 422  # not yourself
+    stranger, _ = api.signup()
+    assert api.call("POST", f"/users/{tech_id}/disable", stranger).status_code == 404
+    assert api.call("POST", f"/users/{tech_id}/enable", stranger).status_code == 404
+
+
+def test_disabled_owner_can_be_restored_by_another_owner(api, shop):
+    second, second_user = api.add_user(shop["owner"], "owner")
+    api.ok("POST", f"/users/{shop['owner_user']['id']}/disable", second)
+    assert api.call("GET", "/me", shop["owner"]).status_code == 401
+    # The disabled owner doesn't get budget alerts any more
+    api.ok("PATCH", "/company", second, json={"sms_alerts_enabled": True})
+    api.ok("POST", f"/jobs/{shop['job']['id']}/expenses", second, status=201, json={"amount_cents": 90_000})
+    assert api.sms.sent == []  # the disabled owner is the one with the phone
+    to, alert, _ = api.fallback.sent[-1]
+    assert alert.level.value == "warning"
+    assert [str(u.id) for u in to] == [second_user["id"]]
+
+    api.ok("POST", f"/users/{shop['owner_user']['id']}/enable", second)
+    assert login_as(api, shop["owner_user"]["email"]).status_code == 200
+
+
+def test_inactive_technician_cant_take_new_jobs(api, shop):
+    tech_id = shop["tech_profile"]["id"]
+    api.ok("PATCH", f"/technicians/{tech_id}", shop["owner"], json={"active": False})
+    r = api.call("POST", "/jobs", shop["dispatcher"],
+                 json={"customer_id": shop["customer"]["id"], "title": "Leak", "technician_id": tech_id})
+    assert r.status_code == 422
+    other = api.ok("POST", "/jobs", shop["dispatcher"], status=201,
+                   json={"customer_id": shop["customer"]["id"], "title": "Leak"})
+    assert api.call("PATCH", f"/jobs/{other['id']}", shop["dispatcher"],
+                    json={"technician_id": tech_id}).status_code == 422
+    # Their existing job can still be edited (the web app re-sends the technician on every save)
+    job = api.ok("PATCH", f"/jobs/{shop['job']['id']}", shop["dispatcher"],
+                 json={"technician_id": tech_id, "scheduled_start": "2026-10-02T09:00:00+00:00"})
+    assert job["technician_id"] == tech_id
+
+
 # --- roles and companies
 
 def test_owner_only_settings(api, shop):

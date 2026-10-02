@@ -74,7 +74,7 @@ export function CustomersPage({ token, customers, onChanged }) {
   </section>;
 }
 
-export function TeamPage({ token, isOwner, technicians, onChanged }) {
+export function TeamPage({ token, isOwner, meId, technicians, onChanged }) {
   const [users, setUsers] = useState([]);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ email: "", role: "technician", password: "", phone: "", display_name: "", rate: "" });
@@ -119,6 +119,17 @@ export function TeamPage({ token, isOwner, technicians, onChanged }) {
     try { await request(`/technicians/${tech.id}`, token, { method: "PATCH", body: JSON.stringify({ active }) }); await onChanged(); } catch (e) { setError(e.message); }
   }
 
+  // Disabling is about sign-in; deactivating a technician only takes them off the schedule.
+  async function setAccess(user, enable) {
+    if (!enable && !window.confirm(`Disable ${user.email}? They're signed out on every device and can't sign in until you enable them again. Their jobs and history stay.`)) return;
+    setError(""); setMessage("");
+    try {
+      await post(`/users/${user.id}/${enable ? "enable" : "disable"}`, token);
+      await Promise.all([loadUsers(), onChanged()]);
+      if (enable && techByUser[user.id]) setMessage(`${user.email} can sign in again. Use Reactivate to put them back on the schedule.`);
+    } catch (e) { setError(e.message); }
+  }
+
   return <section className="page-panel">
     <div className="panel-toolbar"><p className="muted">{isOwner ? "Add the people who dispatch and do the work. Technicians get their own schedule." : "Only the owner can add people or change pay."}</p>{isOwner && <button className="primary" onClick={() => setAdding(!adding)}>{adding ? "Close" : "＋ Add person"}</button>}</div>
     {message && <p className="success page-message" role="status">{message}</p>}
@@ -130,11 +141,15 @@ export function TeamPage({ token, isOwner, technicians, onChanged }) {
       {form.role === "technician" && <><label className="editor-field">Name on the schedule<input maxLength={200} placeholder="e.g. Sam R." {...field("display_name")} /></label><label className="editor-field">Hourly rate (optional)<input inputMode="decimal" placeholder="$0.00" {...field("rate")} /></label></>}
     </div><div className="form-actions"><button className="primary" disabled={busy}>{busy ? "Adding…" : "Add person"}</button></div></form>}
     {error && <p className="error page-message">{error}</p>}
-    <ul className="data-list">{users.map((u) => { const tech = techByUser[u.id]; return <li key={u.id} className={tech && !tech.active ? "inactive" : ""}>
+    <ul className="data-list">{users.map((u) => { const tech = techByUser[u.id]; return <li key={u.id} className={u.disabled_at || (tech && !tech.active) ? "inactive" : ""}>
       <span className="avatar">{initials(tech?.display_name || u.email)}</span>
       <span className="data-main"><strong>{tech?.display_name || u.email}</strong><small>{tech ? u.email : ""}{u.phone ? `${tech ? " · " : ""}${u.phone}` : ""}</small></span>
-      <span className="data-side"><span className="role-pill">{roleName(u.role)}</span>{tech && tech.hourly_rate_cents != null && <small>{centsToDollars(tech.hourly_rate_cents)}/h</small>}{tech && !tech.active && <small>Inactive</small>}</span>
-      {isOwner && <span className="data-actions">{u.role === "technician" && !tech && <button className="quiet small" onClick={() => setUpTechnician(u)}>Add to schedule</button>}{tech && <button className="quiet small" onClick={() => setActive(tech, !tech.active)}>{tech.active ? "Deactivate" : "Reactivate"}</button>}</span>}
+      <span className="data-side"><span className="role-pill">{roleName(u.role)}</span>{tech && tech.hourly_rate_cents != null && <small>{centsToDollars(tech.hourly_rate_cents)}/h</small>}{u.disabled_at ? <small>Can't sign in</small> : tech && !tech.active && <small>Inactive</small>}</span>
+      {isOwner && <span className="data-actions">
+        {u.role === "technician" && !tech && !u.disabled_at && <button className="quiet small" onClick={() => setUpTechnician(u)}>Add to schedule</button>}
+        {tech && !u.disabled_at && <button className="quiet small" onClick={() => setActive(tech, !tech.active)}>{tech.active ? "Deactivate" : "Reactivate"}</button>}
+        {u.id !== meId && <button className={`quiet small ${u.disabled_at ? "" : "danger"}`} onClick={() => setAccess(u, Boolean(u.disabled_at))}>{u.disabled_at ? "Enable sign-in" : "Disable"}</button>}
+      </span>}
     </li>; })}</ul>
   </section>;
 }

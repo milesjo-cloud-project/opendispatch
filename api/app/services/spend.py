@@ -121,7 +121,8 @@ def send_pending_alerts(session: Session, notifier: NotificationPort, limit: int
     sent = 0
     for alert in pending:
         owners = session.scalars(
-            select(User).where(User.company_id == alert.company_id, User.role == UserRole.OWNER)
+            select(User).where(User.company_id == alert.company_id, User.role == UserRole.OWNER,
+                               User.disabled_at.is_(None))
         ).all()
         if not owners:
             log.warning("Budget alert %s has no owner to go to; will retry", alert.id)
