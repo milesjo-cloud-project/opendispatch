@@ -37,6 +37,7 @@ from app.domain.access import can_change_status, can_view_budget, is_office
 from app.domain.budget import JobBudget, job_budget
 from app.domain.entities import Customer, Expense, Job, JobAttachment, JobEvent, Technician, TimeEntry
 from app.domain.errors import DomainRuleViolation
+from app.domain.job_status import JobStatus
 from app.services import spend
 from app.services.spend import NotFound
 from app.config import settings
@@ -101,9 +102,28 @@ def list_jobs(actor: Actor = Depends(current_actor), session: Session = Depends(
 @router.post("/jobs", response_model=JobOut, status_code=201)
 def create_job(body: JobCreate, actor: Actor = Depends(office_actor),
                session: Session = Depends(get_session)):
-    _check_refs(session, actor.user.company_id, body.customer_id, body.technician_id)
-    job = Job(company_id=actor.user.company_id, **body.model_dump())
-    JobRepository(session).add(job)
+    """Create a job, optionally with a new customer and straight onto the schedule.
+    One transaction: if any part is refused, nothing is saved, so retrying can't duplicate."""
+    company_id = actor.user.company_id
+    _check_refs(session, company_id, body.customer_id, body.technician_id)
+    repo = JobRepository(session)
+    try:
+        customer_id = body.customer_id
+        if body.new_customer is not None:
+            customer = Customer(company_id=company_id, **body.new_customer.model_dump())
+            session.add(customer)
+            session.flush()  # no ORM relationships, so flush in FK order ourselves
+            customer_id = customer.id
+        job = Job(company_id=company_id, customer_id=customer_id,
+                  **body.model_dump(exclude={"customer_id", "new_customer", "schedule"}))
+        repo.add(job)
+        if body.schedule:
+            session.flush()  # the event's FK needs the job row first
+            repo.add_event(job.transition_to(JobStatus.SCHEDULED, actor_user_id=actor.user.id))
+        session.flush()
+    except Exception:
+        session.rollback()
+        raise
     session.commit()
     return _job_out(job, actor, session)
 

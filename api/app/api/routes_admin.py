@@ -70,9 +70,19 @@ def list_users(actor: Actor = Depends(office_actor), session: Session = Depends(
 def create_user(body: UserCreate, actor: Actor = Depends(owner_actor),
                 session: Session = Depends(get_session),
                 hasher: PasswordHasherPort = Depends(get_hasher)):
-    """Owner only. Add a dispatcher, technician or another owner with a starting password."""
-    user = auth.create_user(session, hasher, company_id=actor.user.company_id, email=body.email,
-                            role=body.role, password=body.password, phone=body.phone)
+    """Owner only. Add a dispatcher, technician or another owner with a starting password.
+    With `technician`, they also get a technician profile; both are saved or neither is."""
+    try:
+        user = auth.create_user(session, hasher, company_id=actor.user.company_id, email=body.email,
+                                role=body.role, password=body.password, phone=body.phone)
+        if body.technician is not None:
+            session.add(Technician(company_id=user.company_id, user_id=user.id, phone=user.phone,
+                                   display_name=body.technician.display_name.strip(),
+                                   hourly_rate_cents=body.technician.hourly_rate_cents))
+            session.flush()
+    except Exception:
+        session.rollback()
+        raise
     session.commit()
     return user
 

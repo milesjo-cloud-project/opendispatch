@@ -122,6 +122,9 @@ class Technician:
     created_at: datetime = field(default_factory=_now)
 
     def __post_init__(self) -> None:
+        self.display_name = self.display_name.strip()
+        if not self.display_name:
+            raise DomainRuleViolation("A technician needs a name for the schedule")
         self.set_hourly_rate(self.hourly_rate_cents)
 
     def set_hourly_rate(self, cents: int | None) -> None:

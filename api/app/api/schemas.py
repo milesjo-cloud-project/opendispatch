@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domain.budget import BudgetLevel
 from app.domain.entities import ExpenseStatus, UserRole
@@ -97,11 +97,18 @@ class CompanyUpdate(BaseModel):
     sms_alerts_enabled: bool | None = None
 
 
+class TechnicianProfileIn(BaseModel):
+    display_name: str = Text200()
+    hourly_rate_cents: int | None = Cents(default=None)
+
+
 class UserCreate(BaseModel):
+    """`technician` also gives them a technician profile, in the same transaction."""
     email: str = Email()
     role: UserRole
     password: str = Password()
     phone: str | None = Field(default=None, max_length=32)
+    technician: TechnicianProfileIn | None = None
 
 
 class TechnicianCreate(BaseModel):
@@ -145,12 +152,23 @@ class CustomerOut(Out):
 # --- jobs
 
 class JobCreate(BaseModel):
-    customer_id: UUID
+    """Send `customer_id` for an existing customer, or `new_customer` to create one in the
+    same request. `schedule: true` puts the job straight on the schedule (it needs a start).
+    Either everything is saved or nothing is."""
+    customer_id: UUID | None = None
+    new_customer: CustomerCreate | None = None
     title: str = Text200()
     description: str | None = Field(default=None, max_length=10_000)
     technician_id: UUID | None = None
     scheduled_start: datetime | None = None
     quoted_amount_cents: int | None = Cents(default=None)
+    schedule: bool = False
+
+    @model_validator(mode="after")
+    def _one_customer(self):
+        if (self.customer_id is None) == (self.new_customer is None):
+            raise ValueError("Send either customer_id or new_customer")
+        return self
 
 
 class JobUpdate(BaseModel):
