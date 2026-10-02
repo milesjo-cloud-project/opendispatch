@@ -55,6 +55,18 @@ Cancelled: reachable from anything before Completed. Paid and Cancelled are fina
 The table lives in `api/app/domain/job_status.py`. The only way to change a job's status is
 `job.transition_to(...)`, which returns a `JobEvent` to save in the same transaction.
 
+Editing a job (`PATCH /jobs/{id}`) also depends on its stage. The rules are on `Job` in
+`api/app/domain/entities.py`:
+
+- **Technician:** can change until the job is Completed. Can be removed only from a draft or
+  scheduled job; pull a dispatched job back to Scheduled first.
+- **Start time:** can change until the tech is en route. Only a draft can have no time.
+- **Quote:** can change until the job is Invoiced.
+- **Title and description:** can change until the job is Paid or Cancelled.
+
+Sending a value the job already has is always fine. If any change is refused, nothing in that
+request is saved.
+
 ## Expenses and job budgets
 
 Money is stored as whole cents (`50_000` = $500.00), never floats.

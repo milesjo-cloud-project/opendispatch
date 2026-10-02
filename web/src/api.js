@@ -39,6 +39,11 @@ export function statusActions(status, isTechnician) {
 }
 export const canCancel = (status, isTechnician) => !isTechnician && CANCELLABLE.includes(status);
 
+// Mirrors REASSIGNABLE, UNASSIGNABLE and RESCHEDULABLE in api/app/domain/entities.py
+export const canReassign = (status) => ["requested", "scheduled", "dispatched", "en_route", "in_progress"].includes(status);
+export const canUnassign = (status) => ["requested", "scheduled"].includes(status);
+export const canReschedule = (status) => ["requested", "scheduled", "dispatched"].includes(status);
+
 // "1,250.50" -> 125050. Returns null for blank, NaN for nonsense.
 export function dollarsToCents(text) {
   const clean = String(text ?? "").replace(/[$,\s]/g, "");

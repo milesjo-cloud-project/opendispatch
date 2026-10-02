@@ -30,6 +30,11 @@ def _require_cents(value, what: str, *, allow_zero: bool) -> None:
         raise DomainRuleViolation(f"{what} must be {'zero or more' if allow_zero else 'more than zero'}")
 
 
+def _check_quote(cents: int | None) -> None:
+    if cents is not None:
+        _require_cents(cents, "Quoted amount", allow_zero=True)
+
+
 @dataclass(eq=False)
 class Company:
     """A contractor business. Every other record belongs to exactly one company."""
@@ -171,6 +176,23 @@ class JobAttachment:
     created_at: datetime = field(default_factory=_now)
 
 
+_S = JobStatus
+
+# What can still be edited at each stage. Setting a field to the value it already has is
+# always fine (the web app re-sends the technician and time on every save).
+# Who's doing the work can change until it's done; Dispatched and later need someone.
+REASSIGNABLE = frozenset({_S.REQUESTED, _S.SCHEDULED, _S.DISPATCHED, _S.EN_ROUTE, _S.IN_PROGRESS})
+UNASSIGNABLE = frozenset({_S.REQUESTED, _S.SCHEDULED})
+# From en route on, the start time is what happened, not a plan.
+RESCHEDULABLE = frozenset({_S.REQUESTED, _S.SCHEDULED, _S.DISPATCHED})
+# The quote is what the customer was billed.
+QUOTE_LOCKED = frozenset({_S.INVOICED, _S.PAID, _S.CANCELLED})
+
+
+def _label(status: JobStatus) -> str:
+    return status.value.replace("_", " ")
+
+
 @dataclass(eq=False)
 class Job:
     company_id: UUID
@@ -185,11 +207,56 @@ class Job:
     created_at: datetime = field(default_factory=_now)
 
     def __post_init__(self) -> None:
-        self.set_quote(self.quoted_amount_cents)
+        _check_quote(self.quoted_amount_cents)
+
+    # --- edits. Like transition_to(), these leave the job untouched when they refuse.
+
+    def _require_open(self) -> None:
+        if self.status in TERMINAL:
+            raise DomainRuleViolation(f"A {_label(self.status)} job can't be changed")
+
+    def rename(self, title: str) -> None:
+        title = title.strip()
+        if title == self.title:
+            return
+        self._require_open()
+        if not title:
+            raise DomainRuleViolation("A job needs a title")
+        self.title = title
+
+    def set_description(self, description: str | None) -> None:
+        if description == self.description:
+            return
+        self._require_open()
+        self.description = description
+
+    def assign(self, technician_id: UUID | None) -> None:
+        """Change or clear the technician. Checking the technician exists, belongs to the
+        company and is active is the caller's job; this checks the job's stage."""
+        if technician_id == self.technician_id:
+            return
+        if self.status not in REASSIGNABLE:
+            raise DomainRuleViolation(f"The technician on a {_label(self.status)} job can't change")
+        if technician_id is None and self.status not in UNASSIGNABLE:
+            hint = "; pull it back to scheduled first" if self.status == JobStatus.DISPATCHED else ""
+            raise DomainRuleViolation(f"A {_label(self.status)} job needs a technician{hint}")
+        self.technician_id = technician_id
+
+    def reschedule(self, start: datetime | None) -> None:
+        if start == self.scheduled_start:
+            return
+        if self.status not in RESCHEDULABLE:
+            raise DomainRuleViolation(f"A job that's {_label(self.status)} keeps its scheduled time")
+        if start is None and self.status != JobStatus.REQUESTED:
+            raise DomainRuleViolation(f"A {_label(self.status)} job needs a start time")
+        self.scheduled_start = start
 
     def set_quote(self, cents: int | None) -> None:
-        if cents is not None:
-            _require_cents(cents, "Quoted amount", allow_zero=True)
+        if cents == self.quoted_amount_cents and not isinstance(cents, bool):
+            return
+        if self.status in QUOTE_LOCKED:
+            raise DomainRuleViolation(f"The quote on a {_label(self.status)} job can't change")
+        _check_quote(cents)
         self.quoted_amount_cents = cents
 
     def transition_to(

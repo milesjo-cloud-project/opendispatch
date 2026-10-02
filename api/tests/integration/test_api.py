@@ -488,6 +488,38 @@ def test_patch_job(api, shop):
     assert api.call("PATCH", f"/jobs/{job_id}", shop["tech"], json={"title": "x"}).status_code == 403
 
 
+def test_patch_job_follows_the_jobs_stage(api, shop):
+    job_id, tech_id = shop["job"]["id"], shop["tech_profile"]["id"]
+    office, tech = shop["dispatcher"], shop["tech"]
+    patch = lambda body: api.call("PATCH", f"/jobs/{job_id}", office, json=body)
+    move = lambda who, to: api.ok("POST", f"/jobs/{job_id}/status", who, json={"status": to})
+
+    move(office, "scheduled")
+    assert patch({"scheduled_start": None}).status_code == 422
+    move(office, "dispatched")
+    r = patch({"technician_id": None})
+    assert r.status_code == 422 and "pull it back to scheduled" in r.json()["detail"]
+    move(tech, "en_route")
+    assert patch({"scheduled_start": "2026-10-01T11:00:00+00:00"}).status_code == 422
+    # A refused edit saves nothing, even the parts that were allowed
+    assert patch({"title": "Renamed", "scheduled_start": "2026-10-01T11:00:00+00:00"}).status_code == 422
+    assert api.ok("GET", f"/jobs/{job_id}", office)["title"] == "Water heater"
+    # What the web app sends on every save: unchanged technician and time are fine
+    same = {"technician_id": tech_id, "scheduled_start": START}
+    assert patch(same).status_code == 200
+
+    move(tech, "in_progress")
+    move(tech, "completed")
+    assert patch({"technician_id": None}).status_code == 422
+    assert patch({"quoted_amount_cents": 90_000}).status_code == 200  # still before the invoice
+    move(office, "invoiced")
+    assert patch({"quoted_amount_cents": 95_000}).status_code == 422
+    assert patch({"description": "Warranty card left with customer"}).status_code == 200
+    move(office, "paid")
+    assert patch({"title": "Changed after paying"}).status_code == 422
+    assert patch(same).status_code == 200
+
+
 # --- spend
 
 def test_expense_approval_flow(api, shop):
