@@ -17,7 +17,7 @@ from app.domain.auth import (
     PasswordResetToken,
     check_password_policy,
 )
-from app.domain.entities import Company, User, UserRole
+from app.domain.entities import Company, Technician, User, UserRole
 from app.domain.errors import DomainRuleViolation
 from app.ports.passwords import PasswordHasherPort
 
@@ -125,7 +125,7 @@ def login(
     if user is None or user.password_hash is None:
         _burn_time(hasher, password)
         raise InvalidCredentials()
-    if user.is_locked(now):
+    if user.is_locked(now) or user.is_disabled:
         _burn_time(hasher, password)
         raise InvalidCredentials()
     if not hasher.verify(user.password_hash, password):
@@ -146,7 +146,10 @@ def authenticate(session: Session, token: str) -> tuple[User, AuthSession] | Non
     if auth_session is None or not auth_session.is_active():
         return None
     user = session.get(User, auth_session.user_id)
-    return (user, auth_session) if user is not None else None
+    # Disabling revokes every session too; this is the backstop.
+    if user is None or user.is_disabled:
+        return None
+    return user, auth_session
 
 
 def logout(auth_session: AuthSession) -> None:
@@ -190,7 +193,7 @@ def request_password_reset(session: Session, *, email: str, now: datetime | None
     """
     now = now or datetime.now(timezone.utc)
     user = _find_by_email(session, email, lock=True)
-    if user is None:
+    if user is None or user.is_disabled:
         return None
     recent = session.scalar(
         select(func.count()).select_from(PasswordResetToken)
@@ -226,18 +229,55 @@ def confirm_password_reset(
     ).one_or_none()
     if reset is None or not reset.is_usable():
         raise InvalidResetToken()
+    user = session.get(User, reset.user_id)
+    if user.is_disabled:  # a reset link can't bring back an account the owner shut off
+        raise InvalidResetToken()
     check_password_policy(new_password)  # before using the token, so a weak password can retry
 
-    user = session.get(User, reset.user_id)
     now = datetime.now(timezone.utc)
     reset.use(now)
     user.password_hash = hasher.hash(new_password)
     user.record_successful_login()  # clears any lockout
     # Any other links still in someone's inbox stop working too
+    _cancel_reset_links(session, user, now)
+    _revoke_other_sessions(session, user, keep=None)
+    session.flush()
+
+
+def _cancel_reset_links(session: Session, user: User, now: datetime) -> None:
     session.execute(
         update(PasswordResetToken)
         .where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None))
         .values(used_at=now)
     )
+
+
+def disable_user(session: Session, *, by: User, user: User) -> None:
+    """An owner cuts off someone in their company: signs them out everywhere, cancels their
+    reset links, and takes their technician profile off the schedule. Their jobs, expenses
+    and history stay. The caller has already checked `by` is an owner of user's company."""
+    if user.id == by.id:
+        raise DomainRuleViolation("You can't disable your own account")
+    # Lock the company's owners in a fixed order, so two owners disabling each other at
+    # the same moment can't both succeed and leave nobody able to sign in.
+    session.scalars(
+        select(User).where(User.company_id == by.company_id, User.role == UserRole.OWNER)
+        .order_by(User.id).with_for_update().execution_options(populate_existing=True)
+    ).all()
+    if by.is_disabled:
+        raise DomainRuleViolation("Your account was disabled")
+    session.refresh(user, with_for_update=True)
+
+    now = datetime.now(timezone.utc)
+    user.disable(now)
     _revoke_other_sessions(session, user, keep=None)
+    _cancel_reset_links(session, user, now)
+    session.execute(update(Technician).where(Technician.user_id == user.id).values(active=False))
     session.flush()
+
+
+def enable_user(user: User) -> None:
+    """Let them sign in again with their old password. Their technician profile stays
+    inactive until the owner puts it back on the schedule."""
+    user.enable()
+    user.record_successful_login()  # a fresh start, not a lockout left over from before

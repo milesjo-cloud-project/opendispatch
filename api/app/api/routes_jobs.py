@@ -86,6 +86,8 @@ def _check_refs(session: Session, company_id: UUID, customer_id=None, technician
         t = session.get(Technician, technician_id)
         if t is None or t.company_id != company_id:
             raise DomainRuleViolation("Unknown technician")
+        if not t.active:
+            raise DomainRuleViolation(f"{t.display_name} is inactive and can't take new jobs")
 
 
 # --- jobs
@@ -120,7 +122,10 @@ def update_job(job_id: UUID, body: JobUpdate, actor: Actor = Depends(office_acto
     anything else answers 422 and nothing is saved."""
     job = _job(session, actor, job_id)
     sent = body.model_fields_set
-    _check_refs(session, job.company_id, technician_id=body.technician_id if "technician_id" in sent else None)
+    # Only a change of technician is checked, so a job still assigned to someone who's
+    # since been deactivated can be edited until the office reassigns it.
+    reassigned = "technician_id" in sent and body.technician_id != job.technician_id
+    _check_refs(session, job.company_id, technician_id=body.technician_id if reassigned else None)
     try:
         if "title" in sent and body.title is not None:
             job.rename(body.title)

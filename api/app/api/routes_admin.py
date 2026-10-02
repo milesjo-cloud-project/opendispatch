@@ -77,6 +77,26 @@ def create_user(body: UserCreate, actor: Actor = Depends(owner_actor),
     return user
 
 
+@router.post("/users/{user_id}/disable", response_model=UserOut, tags=["people"])
+def disable_user(user_id: UUID, actor: Actor = Depends(owner_actor), session: Session = Depends(get_session)):
+    """Owner only. Sign someone out everywhere and stop them signing in, e.g. when they leave.
+    Their jobs and history stay. Not your own account."""
+    user = _in_company(session, User, user_id, actor)
+    auth.disable_user(session, by=actor.user, user=user)
+    session.commit()
+    return user
+
+
+@router.post("/users/{user_id}/enable", response_model=UserOut, tags=["people"])
+def enable_user(user_id: UUID, actor: Actor = Depends(owner_actor), session: Session = Depends(get_session)):
+    """Owner only. Let a disabled user sign in again. Put their technician profile back on
+    the schedule separately (PATCH /technicians/{id} with active: true)."""
+    user = _in_company(session, User, user_id, actor)
+    auth.enable_user(user)
+    session.commit()
+    return user
+
+
 # --- technicians
 
 def _tech_out(tech: Technician, actor: Actor) -> TechnicianOut:

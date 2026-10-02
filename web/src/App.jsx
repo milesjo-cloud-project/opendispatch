@@ -228,7 +228,7 @@ export default function App() {
     </>}
     {page === "Jobs" && (jobs.length ? <section className="jobs-list">{jobs.map((job) => <JobCard key={job.id} job={job} customer={customerById[job.customer_id]} technician={technicianById[job.technician_id]} onClick={() => setSelected(job)} compact />)}</section> : <div className="empty-state">{isTechnician ? "No jobs are assigned to you yet." : "No jobs yet. Use “New job” to add one."}</div>)}
     {page === "Customers" && <CustomersPage token={token} customers={customers} onChanged={load} />}
-    {page === "Team" && <TeamPage token={token} isOwner={isOwner} technicians={technicians} onChanged={load} />}
+    {page === "Team" && <TeamPage token={token} isOwner={isOwner} meId={auth.user?.id} technicians={technicians} onChanged={load} />}
     <footer className="app-footer"><Gear /><span>OpenDispatch</span><span className="muted">Scheduling that works for the people doing the work.</span></footer>
     </section>
     {selected && <JobEditor key={selected.id} job={selected} customer={customerById[selected.customer_id]} technicians={technicians.filter((t) => t.active || t.id === selected.technician_id)} onClose={() => setSelected(null)} onSave={updateJob} onPublish={publishJob} onChangeStatus={changeStatus} readOnly={isTechnician} onListAttachments={listAttachments} onUploadAttachment={uploadAttachment} onDownloadAttachment={downloadAttachment} onCreateTrackingLink={createTrackingLink} />}

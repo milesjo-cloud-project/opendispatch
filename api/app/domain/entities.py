@@ -69,6 +69,9 @@ class User:
     password_hash: str | None = None  # None = can't log in yet
     failed_logins: int = 0
     locked_until: datetime | None = None
+    # Set by an owner to cut someone off (they left, or their account was misused).
+    # Unlike a lockout it doesn't expire, and the data stays.
+    disabled_at: datetime | None = None
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=_now)
 
@@ -97,6 +100,17 @@ class User:
     def record_successful_login(self) -> None:
         self.failed_logins = 0
         self.locked_until = None
+
+    @property
+    def is_disabled(self) -> bool:
+        return self.disabled_at is not None
+
+    def disable(self, now: datetime | None = None) -> None:
+        if self.disabled_at is None:
+            self.disabled_at = now or _now()
+
+    def enable(self) -> None:
+        self.disabled_at = None
 
 
 @dataclass(eq=False)

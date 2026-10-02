@@ -51,6 +51,7 @@ class UserOut(Out):
     email: str
     role: UserRole
     phone: str | None
+    disabled_at: datetime | None = None  # set = can't sign in
 
 
 class MeOut(UserOut):

@@ -125,6 +125,7 @@ users = Table(
     Column("password_hash", String(255)),
     Column("failed_logins", Integer, nullable=False, server_default="0"),
     Column("locked_until", DateTime(timezone=True)),
+    Column("disabled_at", DateTime(timezone=True)),
     _created_at(),
     CheckConstraint(r"phone ~ '^\+[1-9][0-9]{7,14}$'", name="phone_e164"),
     _company_scoped_key("users"),

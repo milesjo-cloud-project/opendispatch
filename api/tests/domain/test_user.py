@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -18,3 +19,14 @@ def test_role_string_becomes_enum():
 def test_unknown_role_is_rejected():
     with pytest.raises(DomainRuleViolation):
         User(company_id=uuid4(), email="a@b.com", role="superadmin")
+
+
+def test_disable_and_enable():
+    user = User(company_id=uuid4(), email="a@b.com", role="technician")
+    assert not user.is_disabled
+    when = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    user.disable(when)
+    user.disable()  # disabling again keeps the original time
+    assert user.is_disabled and user.disabled_at == when
+    user.enable()
+    assert not user.is_disabled
