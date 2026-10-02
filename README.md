@@ -96,8 +96,12 @@ and every other endpoint works as that owner. `POST /auth/login` gets a new toke
 
 - Tokens last 14 days. `POST /auth/logout` ends one; changing your password ends all the others.
 - 10 wrong passwords in a row lock the account for 15 minutes.
-- Owners add people with `POST /users` (with a starting password) and turn a user into a
-  technician with `POST /technicians`.
+- Owners add people with `POST /users` (with a starting password). Include
+  `"technician": {"display_name": ..., "hourly_rate_cents": ...}` to make them a technician in the
+  same request, or do it later with `POST /technicians`.
+- `POST /jobs` takes a `customer_id`, or a `new_customer` to create one in the same request, and
+  `"schedule": true` to put the job straight on the schedule. If any part is refused, nothing is
+  saved, so retrying never makes duplicates.
 - When someone leaves, an owner calls `POST /users/{id}/disable` (**Disable** on the Team page).
   It signs them out everywhere, cancels their reset links, stops them signing in, and takes their
   technician profile off the schedule. Their jobs and history stay. `POST /users/{id}/enable`

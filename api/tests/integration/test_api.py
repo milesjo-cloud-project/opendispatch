@@ -335,6 +335,22 @@ def test_owner_only_settings(api, shop):
                     json={"email": "x@example.com", "role": "owner", "password": PASSWORD}).status_code == 403
 
 
+def test_add_technician_in_one_go(api, shop):
+    owner = shop["owner"]
+    user = api.ok("POST", "/users", owner, status=201, json={
+        "email": f"tech-{uuid4()}@example.com", "role": "technician", "password": PASSWORD,
+        "phone": "(555) 222-3333", "technician": {"display_name": " Riley ", "hourly_rate_cents": 5_000}})
+    tech = [t for t in api.ok("GET", "/technicians", owner) if t["user_id"] == user["id"]]
+    assert [(t["display_name"], t["hourly_rate_cents"], t["phone"]) for t in tech] == [("Riley", 5_000, "+15552223333")]
+
+    # A bad profile means no user either, so fixing it and retrying doesn't hit "email taken"
+    email = f"tech-{uuid4()}@example.com"
+    bad = api.call("POST", "/users", owner, json={"email": email, "role": "technician", "password": PASSWORD,
+                                                  "technician": {"display_name": "   "}})
+    assert bad.status_code == 422
+    assert all(u["email"] != email for u in api.ok("GET", "/users", owner))
+
+
 def test_pay_rates_are_owner_only(api, shop):
     by_owner = api.ok("GET", "/technicians", shop["owner"])
     by_dispatcher = api.ok("GET", "/technicians", shop["dispatcher"])
@@ -367,6 +383,37 @@ def test_create_job_persists_customer_and_defaults(api, shop):
     assert created["technician_id"] is None
     assert created["quoted_amount_cents"] is None
     assert api.ok("GET", f"/jobs/{created['id']}", shop["dispatcher"])["id"] == created["id"]
+
+
+def test_create_job_with_new_customer_and_schedule_in_one_go(api, shop):
+    office = shop["dispatcher"]
+    customers_before = len(api.ok("GET", "/customers", office))
+    created = api.ok("POST", "/jobs", office, status=201, json={
+        "new_customer": {"name": "Pat New", "phone": "555-0199", "address": "4 Oak Ave"},
+        "title": "Install disposal", "technician_id": shop["tech_profile"]["id"],
+        "scheduled_start": START, "schedule": True})
+    assert created["status"] == "scheduled"
+    assert created["customer_name"] == "Pat New"
+    assert len(api.ok("GET", "/customers", office)) == customers_before + 1
+    events = api.ok("GET", f"/jobs/{created['id']}/events", office)
+    assert [e["to_status"] for e in events] == ["scheduled"]
+
+
+def test_create_job_is_all_or_nothing(api, shop):
+    office = shop["dispatcher"]
+    customers_before = len(api.ok("GET", "/customers", office))
+    jobs_before = len(api.ok("GET", "/jobs", office))
+    # Scheduling without a start time is refused after the customer would have been made
+    r = api.call("POST", "/jobs", office, json={"new_customer": {"name": "Pat Retry"}, "title": "Leak",
+                                                 "schedule": True})
+    assert r.status_code == 422 and "start time" in r.json()["detail"]
+    assert len(api.ok("GET", "/customers", office)) == customers_before
+    assert len(api.ok("GET", "/jobs", office)) == jobs_before
+    # One customer, either an existing one or a new one
+    neither = api.call("POST", "/jobs", office, json={"title": "Leak"})
+    both = api.call("POST", "/jobs", office, json={"title": "Leak", "customer_id": shop["customer"]["id"],
+                                                   "new_customer": {"name": "Pat"}})
+    assert neither.status_code == both.status_code == 422
 
 
 def test_invoice_customer_tracking_link_and_live_status(api, shop):

@@ -18,12 +18,10 @@ export function NewJobDialog({ token, customers, technicians, onClose, onCreated
     if (Number.isNaN(quote)) { setError("Enter the quote as dollars, like 1250 or 1250.50."); return; }
     setBusy(true);
     try {
-      let id = customerId;
-      if (customerId === "new") id = (await post("/customers", token, { name: customer.name.trim(), phone: customer.phone.trim() || null, address: customer.address.trim() || null })).id;
-      let created = await post("/jobs", token, { customer_id: id, title: job.title.trim(), description: job.description.trim() || null, technician_id: job.technician_id || null, scheduled_start: job.start ? new Date(job.start).toISOString() : null, quoted_amount_cents: quote });
+      // One request: the customer, the job and scheduling are saved together or not at all, so a retry can't duplicate anything.
       // A job with a time goes straight onto the schedule; without one it stays a draft in Open shifts.
-      if (job.start) created = await post(`/jobs/${created.id}/status`, token, { status: "scheduled" });
-      onCreated(created);
+      const who = customerId === "new" ? { new_customer: { name: customer.name.trim(), phone: customer.phone.trim() || null, address: customer.address.trim() || null } } : { customer_id: customerId };
+      onCreated(await post("/jobs", token, { ...who, title: job.title.trim(), description: job.description.trim() || null, technician_id: job.technician_id || null, scheduled_start: job.start ? new Date(job.start).toISOString() : null, quoted_amount_cents: quote, schedule: Boolean(job.start) }));
     } catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -97,9 +95,9 @@ export function TeamPage({ token, isOwner, meId, technicians, onChanged }) {
     if (form.role === "technician" && Number.isNaN(dollarsToCents(form.rate))) { setError("Enter the hourly rate as dollars, like 45 or 45.50."); return; }
     setBusy(true);
     try {
-      const user = await post("/users", token, { email: form.email.trim(), role: form.role, password: form.password, phone: form.phone.trim() || null });
-      try { if (form.role === "technician") await makeTechnician(user, form.display_name || form.email.split("@")[0], form.rate); }
-      catch (e) { setError(`${user.email} was added, but their technician profile wasn't: ${e.message}`); }
+      // The technician profile comes in the same request, so a problem with it doesn't leave a half-added person behind
+      const technician = form.role === "technician" ? { display_name: (form.display_name.trim() || form.email.split("@")[0]), hourly_rate_cents: dollarsToCents(form.rate) } : null;
+      const user = await post("/users", token, { email: form.email.trim(), role: form.role, password: form.password, phone: form.phone.trim() || null, technician });
       setMessage(`Added ${user.email}. Give them their starting password; they can change it after signing in.`);
       setForm({ email: "", role: "technician", password: "", phone: "", display_name: "", rate: "" }); setAdding(false);
       await Promise.all([loadUsers(), onChanged()]);
