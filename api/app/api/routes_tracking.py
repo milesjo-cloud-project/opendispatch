@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.adapters.db.tables import job_tracking_links, jobs, job_events
+from app.adapters.db.tables import job_events, job_tracking_links, jobs
 from app.api.deps import Actor, get_session, office_actor
 from app.api.schemas import CustomerTrackingOut, TrackingLinkOut
 from app.domain.entities import Job

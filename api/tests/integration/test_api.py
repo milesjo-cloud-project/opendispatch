@@ -491,8 +491,12 @@ def test_patch_job(api, shop):
 def test_patch_job_follows_the_jobs_stage(api, shop):
     job_id, tech_id = shop["job"]["id"], shop["tech_profile"]["id"]
     office, tech = shop["dispatcher"], shop["tech"]
-    patch = lambda body: api.call("PATCH", f"/jobs/{job_id}", office, json=body)
-    move = lambda who, to: api.ok("POST", f"/jobs/{job_id}/status", who, json={"status": to})
+
+    def patch(body):
+        return api.call("PATCH", f"/jobs/{job_id}", office, json=body)
+
+    def move(who, to):
+        return api.ok("POST", f"/jobs/{job_id}/status", who, json={"status": to})
 
     move(office, "scheduled")
     assert patch({"scheduled_start": None}).status_code == 422

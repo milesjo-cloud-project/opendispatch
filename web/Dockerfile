@@ -1,7 +1,7 @@
 FROM node:26-slim AS deps
 WORKDIR /srv/web
-COPY package*.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 # Local development: hot reload, src is mounted by docker compose
 FROM deps AS dev

@@ -1,9 +1,11 @@
-fastapi==0.141.*
-uvicorn[standard]==0.54.*
-psycopg[binary]==3.3.*
-pydantic-settings==2.15.*
-sqlalchemy==2.1.*
-alembic==1.20.*
-argon2-cffi==25.*
-httpx==0.28.*
-python-multipart==0.0.*
+# Exact versions, so every install (CI, Docker, your machine) gets the same code.
+# Dependabot opens one grouped PR a week to move them; CI tests the bump before it merges.
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+psycopg[binary]==3.3.6
+pydantic-settings==2.15.0
+sqlalchemy==2.1.3
+alembic==1.20.0
+argon2-cffi==25.1.0
+httpx==0.28.1
+python-multipart==0.0.32

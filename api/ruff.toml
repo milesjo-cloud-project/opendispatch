@@ -1,0 +1,23 @@
+# Lint only (`ruff check .`): unused and undefined names, likely bugs, import order,
+# and outdated syntax. Not used as a formatter; the code's compact style is on purpose.
+line-length = 120
+# Docker and CI run 3.14, but keep suggestions to what still runs on 3.13 checkouts
+target-version = "py313"
+
+[lint]
+select = ["E", "W", "F", "B", "I", "UP"]
+ignore = [
+    "UP017",  # timezone.utc is as clear as datetime.UTC; not worth the churn
+    "UP042",  # StrEnum changes what str(status) returns; that's a behaviour change, not lint
+]
+
+[lint.per-file-ignores]
+# Applied migrations are never edited, so they keep Alembic's generated style
+"migrations/versions/*" = ["UP", "E501"]
+
+[lint.flake8-bugbear]
+# How FastAPI declares dependencies and uploads; not shared mutable defaults
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Query"]
+
+[lint.isort]
+known-first-party = ["app", "tests"]

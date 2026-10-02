@@ -8,6 +8,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
+from .tenants import make_tenant
+
 
 @pytest.fixture
 def session():
@@ -27,6 +29,18 @@ def session():
     finally:
         s.rollback()  # nothing from this test is kept
         s.close()
+
+
+@pytest.fixture
+def a(session):
+    """Company A: an owner, a technician and a customer (see tenants.py)."""
+    return make_tenant(session, "Company A")
+
+
+@pytest.fixture
+def b(session):
+    """Company B, for checking A can't reach it."""
+    return make_tenant(session, "Company B")
 
 
 @pytest.fixture

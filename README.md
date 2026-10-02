@@ -39,7 +39,11 @@ python -m venv .venv
 source .venv/bin/activate       # macOS / Linux
 pip install -r requirements-dev.txt
 python -m pytest -v
+ruff check .                    # lint; CI runs it too. `ruff check . --fix` fixes the easy ones
 ```
+
+The web code is formatted with Prettier. After editing anything in `web/`, run
+`npm run format` there (CI fails on unformatted code). VS Code's Prettier extension can do it on save.
 
 Tests that need Postgres are skipped unless `TEST_DATABASE_URL` points at a migrated database,
 e.g. with `docker compose up` running: `$env:TEST_DATABASE_URL = "postgresql://opendispatch:change-me@127.0.0.1:5432/opendispatch"`

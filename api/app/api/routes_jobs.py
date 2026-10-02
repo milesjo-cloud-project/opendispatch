@@ -2,11 +2,11 @@
 
 A job you can't see answers 404, the same as a job that doesn't exist.
 """
+import mimetypes
+import re
 from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID, uuid4
-import mimetypes
-import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
@@ -14,25 +14,26 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.db.job_repository import CustomerRepository, JobRepository
+from app.adapters.db.queries import visible_expenses, visible_job, visible_jobs
 from app.adapters.db.tables import job_attachments
 from app.adapters.storage.filesystem import FileSystemStorage
-from app.adapters.db.queries import visible_expenses, visible_job, visible_jobs
 from app.api.deps import Actor, current_actor, get_alert_sender, get_session, office_actor, owner_actor
 from app.api.schemas import (
     BudgetOut,
     DecisionIn,
     ExpenseCreate,
     ExpenseOut,
+    JobAttachmentOut,
     JobCreate,
     JobEventOut,
     JobOut,
-    JobAttachmentOut,
     JobUpdate,
     SpendOut,
     StatusChangeIn,
     TimeEntryCreate,
     TimeEntryOut,
 )
+from app.config import settings
 from app.domain.access import can_change_status, can_view_budget, is_office
 from app.domain.budget import JobBudget, job_budget
 from app.domain.entities import Customer, Expense, Job, JobAttachment, JobEvent, Technician, TimeEntry
@@ -40,7 +41,6 @@ from app.domain.errors import DomainRuleViolation
 from app.domain.job_status import JobStatus
 from app.services import spend
 from app.services.spend import NotFound
-from app.config import settings
 
 router = APIRouter(tags=["jobs"])
 MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024

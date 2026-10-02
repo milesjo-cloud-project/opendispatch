@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.domain.budget import BudgetLevel, job_budget
 from app.domain.entities import Expense, ExpenseStatus, Job
 
-from .test_tenant_integrity import Tenant, a, b, make_job  # noqa: F401  (fixtures)
+from .tenants import Tenant, make_job
 
 pytestmark = pytest.mark.integration
 
