@@ -39,6 +39,7 @@ python -m venv .venv
 source .venv/bin/activate       # macOS / Linux
 pip install -r requirements-dev.txt
 python -m pytest -v
+ruff check .                    # lint; CI runs it too. `ruff check . --fix` fixes the easy ones
 ```
 
 Tests that need Postgres are skipped unless `TEST_DATABASE_URL` points at a migrated database,

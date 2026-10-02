@@ -9,7 +9,6 @@ from app.domain.entities import ExpenseStatus, UserRole
 from app.domain.job_status import JobStatus
 
 
-
 def Email(**kw):
     return Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", **kw)
 

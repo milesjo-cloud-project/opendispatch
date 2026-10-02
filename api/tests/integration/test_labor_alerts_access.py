@@ -16,7 +16,7 @@ from app.domain.entities import Expense, Job, TimeEntry, User
 from app.domain.errors import DomainRuleViolation
 from app.services.spend import NotFound, log_time, send_pending_alerts, submit_expense
 
-from .test_tenant_integrity import Tenant, a, b, make_job  # noqa: F401  (fixtures)
+from .tenants import Tenant, make_job
 
 pytestmark = pytest.mark.integration
 
