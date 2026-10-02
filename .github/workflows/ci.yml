@@ -58,6 +58,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       # Exactly what package-lock.json says; fails if package.json and the lock disagree
       - run: npm ci
+      - run: npm run format:check  # `npm run format` fixes it
       - run: npm run build
 
   images:
