@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.booking.domain import BookingRequest, BookingRequestStatus
@@ -109,3 +110,11 @@ def test_migration_matches_tables_py(session):
     diffs = compare_metadata(MigrationContext.configure(session.connection()), metadata)
     ours = [d for d in diffs if "booking" in repr(d) or "rate_limit" in repr(d)]
     assert ours == []
+
+
+def test_no_constraint_has_its_prefix_twice(session):
+    """The naming convention adds ck_<table>_ itself; a migration that also writes it doubles it."""
+    doubled = session.execute(text(
+        "SELECT conname FROM pg_constraint WHERE conname ~ '^(ck|fk|uq|pk)_[a-z_]+_(ck|fk|uq|pk)_'"
+    )).scalars().all()
+    assert doubled == []
