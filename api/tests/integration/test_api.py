@@ -772,3 +772,30 @@ def test_limit_uses_the_address_the_trusted_proxy_saw(api, shop, monkeypatch):
     assert from_("198.51.100.1") == 201  # a different customer behind the same proxy
     # Faking an earlier entry doesn't help: the proxy's own entry (rightmost) is used
     assert from_("10.9.9.9, 203.0.113.7") == 429
+
+
+def test_job_list_query_count_doesnt_grow_with_jobs(api, shop, tx_session):
+    """GET /jobs loads every job's customer in one query, not one query per job."""
+    from sqlalchemy import event
+
+    def count_queries():
+        statements = []
+        conn = tx_session.connection()
+        listener = lambda *args: statements.append(args[2])  # noqa: E731
+        event.listen(conn, "before_cursor_execute", listener)
+        try:
+            jobs = api.ok("GET", "/jobs", shop["dispatcher"])
+        finally:
+            event.remove(conn, "before_cursor_execute", listener)
+        return len(jobs), len(statements)
+
+    one_job = count_queries()
+    for n in range(5):
+        customer = api.ok("POST", "/customers", shop["dispatcher"], status=201, json={"name": f"Customer {n}"})
+        api.ok("POST", "/jobs", shop["dispatcher"], status=201,
+               json={"customer_id": customer["id"], "title": f"Job {n}"})
+    six_jobs = count_queries()
+    assert (one_job[0], six_jobs[0]) == (1, 6)
+    assert six_jobs[1] == one_job[1]
+    names = {j["customer_name"] for j in api.ok("GET", "/jobs", shop["dispatcher"])}
+    assert names == {"Jane Doe"} | {f"Customer {n}" for n in range(5)}
