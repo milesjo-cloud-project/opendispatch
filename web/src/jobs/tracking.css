@@ -1,0 +1,88 @@
+/* The customer's job tracking page: status and progress. */
+.tracking-status {
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 28px;
+  padding: 8px 12px;
+  border-radius: 30px;
+  background: var(--teal-soft);
+  color: var(--teal-dark);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+.tracking-status.status-requested {
+  background: #fff2e6;
+  color: #965a27;
+}
+.tracking-status.status-cancelled {
+  background: #fff0ef;
+  color: #ab3d33;
+}
+.progress-list {
+  display: grid;
+  margin: 22px 0 28px;
+}
+.progress-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  color: #a0a9ae;
+  font-size: 0.85rem;
+}
+.progress-step:not(:last-child)::after {
+  position: absolute;
+  top: 30px;
+  left: 13px;
+  width: 1px;
+  height: 21px;
+  background: #e3e9ea;
+  content: "";
+}
+.progress-step.done {
+  color: #334249;
+  font-weight: 600;
+}
+.progress-mark {
+  z-index: 1;
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d8e0e2;
+  border-radius: 50%;
+  background: #fff;
+  color: #9aa5aa;
+  font-size: 0.7rem;
+}
+.progress-step.done .progress-mark {
+  border-color: #93ccc4;
+  background: #e9f6f4;
+  color: var(--teal-dark);
+}
+.arrival-info {
+  display: grid;
+  gap: 6px;
+  padding: 15px;
+  border-radius: 9px;
+  background: #f5f8f8;
+}
+.arrival-info span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.arrival-info strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+.refresh-note {
+  margin: 20px 0 0;
+  color: #8a959b;
+  font-size: 0.7rem;
+}

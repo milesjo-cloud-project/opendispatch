@@ -1,0 +1,176 @@
+/* The job dialog's own sections: status buttons, details, documents, tracking link. */
+.description {
+  margin-top: 24px;
+  padding-top: 17px;
+  border-top: 1px solid var(--line);
+  color: #68757d;
+  font-size: 0.8rem;
+}
+.description p {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+.attachments,
+.tracking-tools {
+  margin-top: 23px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.attachment-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.attachment-heading h3,
+.tracking-tools h3 {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 0.93rem;
+}
+.attachment-heading p,
+.tracking-tools p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.drop-zone {
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 8px 12px;
+  border: 1px dashed #93bdb8;
+  border-radius: 8px;
+  background: #f3fbfa;
+  color: var(--teal-dark);
+  font-size: 0.79rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.drop-zone:hover {
+  border-color: var(--teal);
+  background: #e8f6f4;
+}
+.drop-zone.busy {
+  opacity: 0.6;
+  cursor: wait;
+}
+.drop-zone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+.attachment-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.attachment-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.attachment-list li:last-child {
+  border-bottom: 0;
+}
+.file-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 7px;
+  background: #eef3f5;
+  color: var(--teal-dark);
+  font-size: 1.1rem;
+}
+.file-name {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  flex: 1;
+}
+.file-name strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-name small {
+  color: var(--muted);
+  font-size: 0.69rem;
+}
+.tracking-tools {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .attachment-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .drop-zone {
+    width: 100%;
+  }
+  .tracking-tools {
+    grid-template-columns: 1fr;
+  }
+  .tracking-tools > button,
+  .copy-link {
+    grid-column: 1;
+  }
+}
+.status-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 23px;
+  padding: 16px;
+  border: 1px solid #d6ebe8;
+  border-radius: 10px;
+  background: #f5fbfa;
+}
+.status-actions h3 {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-size: 0.93rem;
+}
+.status-actions p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.status-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 8px;
+}
+.status-buttons button {
+  min-height: 44px;
+}
+@media (max-width: 780px) {
+  .status-actions {
+    grid-template-columns: 1fr;
+  }
+  .status-buttons {
+    justify-content: stretch;
+  }
+  .status-buttons button {
+    flex: 1;
+  }
+}

@@ -1,0 +1,108 @@
+/* The public booking form and the office's Requests view. */
+.booking-intro {
+  margin: -6px 0 26px;
+}
+.booking-submit {
+  margin-top: 18px;
+}
+.booking-link-panel {
+  margin-bottom: 14px;
+}
+.booking-link-panel h2 {
+  margin: 0 0 3px;
+  font-size: 1rem;
+}
+.booking-link-body {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.booking-link-body .copy-link a {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.booking-link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .booking-link-body .copy-link {
+    flex-wrap: wrap;
+  }
+  .booking-link-body .copy-link input {
+    flex-basis: 100%;
+  }
+}
+.request-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.request-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.request-card:last-child {
+  border-bottom: 0;
+}
+.request-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.request-contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.86rem;
+}
+.request-contact a {
+  color: var(--teal-dark);
+  overflow-wrap: anywhere;
+}
+.request-details {
+  margin: 0;
+  color: #4d5a62;
+  font-size: 0.86rem;
+  white-space: pre-wrap; /* keep the customer's line breaks */
+  overflow-wrap: anywhere;
+}
+.request-when {
+  margin: 0;
+  font-size: 0.84rem;
+}
+.request-when span {
+  color: var(--muted);
+  font-weight: 700;
+}
+.request-accept {
+  display: grid;
+  gap: 4px;
+  max-width: 520px;
+  padding: 12px;
+  border-radius: 9px;
+  background: #f5f8f8;
+}
+.request-accept .form-hint {
+  margin: 4px 0 0;
+}
+.request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+/* Off screen, not display:none: some bots skip fields that are plainly hidden */
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
