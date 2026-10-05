@@ -1,0 +1,188 @@
+/* The signed-in app shell: top bar, nav, page heading, footer. */
+.app-shell {
+  min-height: 100vh;
+}
+.topbar {
+  height: 68px;
+  display: flex;
+  align-items: center;
+  padding: 0 5vw;
+  gap: 44px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+.topbar nav {
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 28px;
+}
+.nav-link {
+  padding: 0 2px;
+  color: #6d7a83;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-weight: 600;
+}
+.nav-link.active {
+  color: var(--teal-dark);
+  border-bottom-color: var(--teal);
+}
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+}
+.user-label {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+.workspace {
+  width: min(1600px, 100%);
+  margin: 0 auto;
+  padding: 34px 5vw 22px;
+}
+.page-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.page-heading h1 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(1.7rem, 3vw, 2.35rem);
+  letter-spacing: -0.045em;
+}
+.page-heading .muted {
+  margin: 6px 0 0;
+}
+.heading-actions {
+  display: flex;
+  gap: 10px;
+}
+.app-footer {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 38px;
+  padding-top: 17px;
+  border-top: 1px solid var(--line);
+  font-size: 0.79rem;
+}
+.app-footer .gear {
+  width: 21px;
+  height: 21px;
+}
+.app-footer .muted {
+  margin-left: auto;
+  font-size: 0.77rem;
+}
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -7px 0 14px;
+  padding: 10px 13px;
+  border: 1px solid #f1c8bf;
+  border-radius: 8px;
+  background: #fff4f1;
+  color: #8f3425;
+  font-size: 0.86rem;
+}
+.notice button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.1rem;
+}
+@media (max-width: 1050px) {
+  .workspace {
+    padding-right: 3vw;
+    padding-left: 3vw;
+  }
+  .topbar {
+    padding: 0 3vw;
+  }
+}
+@media (max-width: 780px) {
+  .topbar {
+    height: 60px;
+    gap: 17px;
+  }
+  .topbar nav {
+    gap: 13px;
+  }
+  .user-label {
+    display: none;
+  }
+  .workspace {
+    padding-top: 24px;
+  }
+  .page-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .heading-actions {
+    width: 100%;
+  }
+  .heading-actions > * {
+    flex: 1;
+  }
+  .app-footer .muted {
+    display: none;
+  }
+}
+@media (max-width: 480px) {
+  .topbar {
+    padding: 0 13px;
+  }
+  .brand.compact {
+    font-size: 0.96rem;
+  }
+  .topbar nav {
+    gap: 10px;
+  }
+  .nav-link {
+    font-size: 0.85rem;
+  }
+  .top-actions {
+    gap: 0;
+  }
+  .workspace {
+    padding: 21px 13px;
+  }
+}
+.nav-count {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #fff2e6;
+  color: #965a27;
+  font-size: 0.72rem;
+}
+@media (max-width: 780px) {
+  /* The tabs get their own full-width row under the logo and Sign out, instead of
+     a strip that scrolls sideways with nothing showing there's more */
+  .topbar {
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: 0;
+    padding-top: 10px;
+  }
+  .topbar nav {
+    order: 3;
+    width: 100%;
+    height: auto;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    border-top: 1px solid var(--line);
+  }
+  .nav-link {
+    min-height: 44px; /* comfortable to tap */
+  }
+}

@@ -1,0 +1,56 @@
+/* Sign-in, sign-up and password reset cards. */
+.login-wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(ellipse at 85% 10%, #d9f0ed 0, transparent 35%), #f2f5f7;
+}
+.login-card {
+  width: min(410px, 100%);
+  display: grid;
+  gap: 16px;
+  padding: 34px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 14px 42px #24354012;
+}
+.login-card .brand {
+  margin-bottom: 10px;
+}
+.login-card h1 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.login-card .brand p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-family: "DM Sans", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.login-card h2 {
+  margin: 4px 0 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.55rem;
+}
+.login-card label {
+  display: grid;
+  gap: 7px;
+  color: #54616a;
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+@media (max-width: 480px) {
+  .login-card {
+    padding: 25px;
+  }
+}
+.login-links {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
