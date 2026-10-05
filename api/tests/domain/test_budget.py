@@ -3,8 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.budget import BudgetLevel, alert_for, job_budget, level_for
-from app.domain.entities import Company, Job, User
+from app.shared.models import Company, Job, User
+from app.spend.budget import BudgetLevel, alert_for, job_budget, level_for
 
 L = BudgetLevel
 QUOTE = 100_000  # $1,000.00

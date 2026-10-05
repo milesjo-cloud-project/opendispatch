@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from app.adapters.db.postgres import PostgresHealth
+from app.db.health import PostgresHealth
 
 DB_URL = os.getenv("TEST_DATABASE_URL")
 

@@ -3,7 +3,7 @@ that build it live in conftest.py, so pytest finds them without imports."""
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from app.domain.entities import Company, Customer, Job, Technician, User
+from app.shared.models import Company, Customer, Job, Technician, User
 
 
 @dataclass

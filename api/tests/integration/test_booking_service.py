@@ -1,13 +1,13 @@
-"""services/booking.py against a real database: the link, public submissions, and the office's decisions."""
+"""booking/service.py against a real database: the link, public submissions, and the office's decisions."""
 import pytest
 from sqlalchemy import func, select
 
-from app.domain.booking import BookingRequestStatus
-from app.domain.entities import Customer, Job, JobEvent
-from app.domain.errors import DomainRuleViolation
-from app.domain.job_status import JobStatus
-from app.services import booking
-from app.services.spend import NotFound
+from app.booking import service as booking
+from app.booking.domain import BookingRequestStatus
+from app.shared.errors import DomainRuleViolation
+from app.shared.job_status import JobStatus
+from app.shared.models import Customer, Job, JobEvent
+from app.spend.service import NotFound
 
 pytestmark = pytest.mark.integration
 

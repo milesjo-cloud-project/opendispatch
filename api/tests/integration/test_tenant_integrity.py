@@ -6,9 +6,9 @@ import pytest
 from sqlalchemy import delete, text, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from app.adapters.db.tables import job_events, jobs
-from app.domain.entities import Job, Technician, User
-from app.domain.job_status import JobStatus
+from app.db.tables import job_events, jobs
+from app.shared.job_status import JobStatus
+from app.shared.models import Job, Technician, User
 
 from .tenants import make_job
 

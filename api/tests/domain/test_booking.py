@@ -3,9 +3,9 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.booking import BookingRequest, BookingRequestStatus
-from app.domain.entities import Job, User
-from app.domain.errors import DomainRuleViolation
+from app.booking.domain import BookingRequest, BookingRequestStatus
+from app.shared.errors import DomainRuleViolation
+from app.shared.models import Job, User
 
 COMPANY = uuid4()
 

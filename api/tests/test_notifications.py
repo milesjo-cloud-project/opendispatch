@@ -3,13 +3,10 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.adapters.notifications.fake import FakeNotifier
-from app.adapters.notifications.log import LogNotifier
-from app.adapters.notifications.sms import SmsNotifier
-from app.adapters.sms.fake import FakeSms
-from app.adapters.sms.twilio import TwilioSms
-from app.domain.budget import BudgetAlert, BudgetLevel
-from app.domain.entities import Company, Job, User
+from app.adapters.notifications import FakeNotifier, LogNotifier, SmsNotifier
+from app.adapters.sms import FakeSms, TwilioSms
+from app.shared.models import Company, Job, User
+from app.spend.budget import BudgetAlert, BudgetLevel
 
 
 @pytest.fixture

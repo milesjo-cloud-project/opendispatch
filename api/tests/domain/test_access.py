@@ -3,8 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.access import can_view_budget, can_view_expense, can_view_job
-from app.domain.entities import Company, Job, Technician, User
+from app.shared.access import can_view_budget, can_view_expense, can_view_job
+from app.shared.models import Company, Job, Technician, User
 
 
 @pytest.fixture

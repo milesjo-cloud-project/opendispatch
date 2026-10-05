@@ -9,12 +9,12 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
-from app.adapters.db.queries import visible_expenses, visible_job, visible_jobs
-from app.adapters.notifications.fake import FakeNotifier
-from app.domain.budget import BudgetAlert, BudgetLevel
-from app.domain.entities import Expense, Job, TimeEntry, User
-from app.domain.errors import DomainRuleViolation
-from app.services.spend import NotFound, log_time, send_pending_alerts, submit_expense
+from app.adapters.notifications import FakeNotifier
+from app.db.queries import visible_expenses, visible_job, visible_jobs
+from app.shared.errors import DomainRuleViolation
+from app.shared.models import Expense, Job, TimeEntry, User
+from app.spend.budget import BudgetAlert, BudgetLevel
+from app.spend.service import NotFound, log_time, send_pending_alerts, submit_expense
 
 from .tenants import Tenant, make_job
 

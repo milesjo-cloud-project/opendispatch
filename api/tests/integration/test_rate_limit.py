@@ -1,11 +1,11 @@
-"""services/rate_limit.py against a real database."""
+"""shared/rate_limit.py against a real database."""
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
 
-from app.adapters.db.tables import rate_limit_hits
-from app.services import rate_limit
+from app.db.tables import rate_limit_hits
+from app.shared import rate_limit
 
 pytestmark = pytest.mark.integration
 

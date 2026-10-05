@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.auth import (
+from app.auth.domain import (
     LOCKOUT,
     MAX_FAILED_LOGINS,
     SESSION_LIFETIME,
@@ -12,8 +12,8 @@ from app.domain.auth import (
     check_password_policy,
     normalize_phone,
 )
-from app.domain.entities import User
-from app.domain.errors import DomainRuleViolation
+from app.shared.errors import DomainRuleViolation
+from app.shared.models import User
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -92,7 +92,7 @@ def test_session_expires_and_revokes():
 
 
 def test_reset_token_is_single_use_and_expires():
-    from app.domain.auth import RESET_LIFETIME, PasswordResetToken
+    from app.auth.domain import RESET_LIFETIME, PasswordResetToken
 
     t = PasswordResetToken(user_id=uuid4(), company_id=uuid4(), token_hash="h", created_at=NOW)
     assert t.expires_at == NOW + RESET_LIFETIME

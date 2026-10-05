@@ -56,11 +56,11 @@ Dispatched → Scheduled is allowed (reschedule).
 Cancelled: reachable from anything before Completed. Paid and Cancelled are final.
 ```
 
-The table lives in `api/app/domain/job_status.py`. The only way to change a job's status is
+The table lives in `api/app/shared/job_status.py`. The only way to change a job's status is
 `job.transition_to(...)`, which returns a `JobEvent` to save in the same transaction.
 
 Editing a job (`PATCH /jobs/{id}`) also depends on its stage. The rules are on `Job` in
-`api/app/domain/entities.py`:
+`api/app/shared/models.py`:
 
 - **Technician:** can change until the job is Completed. Can be removed only from a draft or
   scheduled job; pull a dispatched job back to Scheduled first.
@@ -80,12 +80,12 @@ Money is stored as whole cents (`50_000` = $500.00), never floats.
 - Expenses at or under the company's `expense_approval_limit_cents` ($500 by default) are
   approved on the spot. Anything over waits until the owner calls `approve()` or `reject()`.
   An owner's own spend is never held.
-- `job_budget(job, expenses)` in `api/app/domain/budget.py` compares spend (approved + pending,
+- `job_budget(job, expenses)` in `api/app/spend/budget.py` compares spend (approved + pending,
   not rejected) against `job.quoted_amount_cents`. `alert_for(...)` tells you when a new
   expense crosses 80% or 100%, once per threshold. Budgets warn; they never block spend.
 - Labor counts too: `job.log_time(technician, started_at, ended_at)` records time for the
   assigned tech and copies their `hourly_rate_cents`, so a later raise doesn't change old jobs.
-- `app/services/spend.py` is what the API will call: `submit_expense()` and `log_time()` lock the
+- `app/spend/service.py` is what the API will call: `submit_expense()` and `log_time()` lock the
   job, save the spend, and write a `budget_alerts` row in the same transaction if a threshold was
   crossed. After committing, `send_pending_alerts(session, notifier)` sends them to the owners.
   Locally the notifier just writes to the API log; email/SMS adapters come later.
@@ -152,13 +152,13 @@ and the owner has a phone number (`PATCH /me`). Anyone else gets the alert in th
 
 ## Who sees what
 
-Rules live in `api/app/domain/access.py`; `api/app/adapters/db/queries.py` applies the same rules
+Rules live in `api/app/shared/access.py`; `api/app/db/queries.py` applies the same rules
 in SQL. Owners and dispatchers see every job in their company, plus quotes and budgets.
 Technicians see only jobs assigned to them, and only their own expenses on those jobs.
 
 ## Database migrations
 
-After changing `api/app/adapters/db/tables.py`:
+After changing `api/app/db/tables.py`:
 
 ```
 docker compose exec api alembic revision --autogenerate -m "describe the change"
@@ -171,11 +171,16 @@ Read the new file in `api/migrations/versions/`, then restart the API (or run
 
 ```
 api/
-  app/
-    domain/     business rules, plain Python (entities, job status flow)
-    ports/      interfaces the domain needs (calendar, health, ...)
-    adapters/   implementations of ports (postgres tables/session, fake calendar, later Google/Stripe/SMS)
-    services/   use cases the API calls (record spend, send alerts); they call the domain
+  app/          grouped by feature: each folder has its routes, request/response shapes and logic
+    auth/       sign-up, login, sessions, password reset
+    company/    company settings, team (users, technicians), customers
+    jobs/       jobs, status changes, files, expenses and time, customer tracking links
+    booking/    online booking: public link and form, the office's request inbox
+    spend/      budgets and budget alerts
+    shared/     used by every feature: models, job status flow, who-sees-what, errors,
+                ports (interfaces for outside services), login/session dependencies
+    db/         Postgres: table definitions, sessions, tenant-scoped queries
+    adapters/   outside services behind the ports: email, SMS, notifications, passwords, files
     main.py     FastAPI wiring
   migrations/   Alembic
   tests/
