@@ -1,7 +1,7 @@
 // The office's Requests view: the public booking link (owner controls) and, below it,
 // the requests customers sent through it.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { post, request } from "./api.js";
+import { post, request } from "../api.js";
 
 export function RequestsPage({ token, isOwner, requests, customers, onChanged, onAccepted }) {
   return (
