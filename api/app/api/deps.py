@@ -3,7 +3,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -38,6 +38,22 @@ def get_session() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+def client_ip(request: Request) -> str:
+    """The caller's address, for per-IP limits.
+
+    Each proxy appends the address it heard from to X-Forwarded-For, so with N trusted
+    proxies the real client is the Nth entry from the right. Entries further left were
+    written by the client and can say anything, so they're never used.
+    """
+    hops = settings.trusted_proxy_hops
+    if hops > 0:
+        chain = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",")]
+        chain = [part for part in chain if part]
+        if len(chain) >= hops:
+            return chain[-hops]
+    return request.client.host if request.client else "unknown"
 
 
 @lru_cache

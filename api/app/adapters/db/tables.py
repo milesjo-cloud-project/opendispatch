@@ -26,6 +26,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import registry
 
 from app.domain.auth import AuthSession, PasswordResetToken
+from app.domain.booking import BookingRequest, BookingRequestStatus
 from app.domain.budget import BudgetAlert, BudgetLevel
 from app.domain.entities import (
     DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS,
@@ -110,6 +111,7 @@ companies = Table(
     Column("expense_approval_limit_cents", Integer, nullable=False,
            server_default=str(DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS)),
     Column("sms_alerts_enabled", Boolean, nullable=False, server_default="false"),
+    Column("booking_id", String(16), unique=True),  # NULL = online booking off
     _created_at(),
     CheckConstraint("expense_approval_limit_cents >= 0", name="approval_limit_not_negative"),
 )
@@ -229,6 +231,47 @@ job_tracking_links = Table(
     _same_company_fk("fk_job_tracking_links_job_same_company", "job_id", "jobs"),
 )
 
+# What customers send through the public booking link. Nothing here points at a customer:
+# the office picks one when it accepts, and only then does a job (job_id) exist.
+booking_requests = Table(
+    "booking_requests",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False),
+    Column("name", String(200), nullable=False),
+    Column("phone", String(40)),
+    Column("email", String(320)),
+    Column("address", Text),
+    Column("title", String(200), nullable=False),
+    Column("description", Text),
+    Column("preferred_time", String(200)),
+    Column("status", _enum_type(BookingRequestStatus, "booking_request_status"), nullable=False),
+    Column("job_id", _uuid(), unique=True),  # one request makes at most one job
+    Column("decided_by_user_id", _uuid()),
+    Column("decided_at", DateTime(timezone=True)),
+    _created_at(),
+    Index("ix_booking_requests_company_status", "company_id", "status"),
+    CheckConstraint("phone IS NOT NULL OR email IS NOT NULL", name="has_contact"),
+    CheckConstraint("(status = 'accepted') = (job_id IS NOT NULL)", name="job_matches_status"),
+    CheckConstraint("(status = 'new') = (decided_at IS NULL)", name="decided_at_matches_status"),
+    _same_company_fk("fk_booking_requests_job_same_company", "job_id", "jobs"),
+    _same_company_fk("fk_booking_requests_decider_same_company", "decided_by_user_id", "users"),
+)
+
+# One row per counted request, for per-IP limits on public routes. Deliberately NOT per
+# company: one spammer is one spammer across every company's link. key_hash is a SHA-256 so
+# addresses aren't stored as plain text, but that's not anonymous (IPv4 is easy to brute
+# force); what protects them is that rows older than the window are deleted on the next hit.
+rate_limit_hits = Table(
+    "rate_limit_hits",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("bucket", String(40), nullable=False),  # what's limited, e.g. "booking"
+    Column("key_hash", String(64), nullable=False),
+    _created_at(),
+    Index("ix_rate_limit_hits_bucket_key_created", "bucket", "key_hash", "created_at"),
+)
+
 # A decision (approved/rejected) always has a time; a pending expense never does.
 # decided_by_user_id is NULL when an expense was approved automatically.
 expenses = Table(
@@ -339,6 +382,7 @@ def start_mappers() -> None:
         (Job, jobs),
         (JobEvent, job_events),
         (JobAttachment, job_attachments),
+        (BookingRequest, booking_requests),
         (Expense, expenses),
         (TimeEntry, time_entries),
         (BudgetAlert, budget_alerts),
