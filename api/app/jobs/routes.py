@@ -63,11 +63,12 @@ def _job(session: Session, actor: Actor, job_id: UUID) -> Job:
     return job
 
 
-def _job_out(job: Job, actor: Actor, session: Session) -> JobOut:
+def _job_out(job: Job, actor: Actor, session: Session, customers: dict | None = None) -> JobOut:
+    """`customers` (id -> Customer) is for lists, which load them all at once; one job looks its own up."""
     out = JobOut.model_validate(job)
     if not can_view_budget(actor.user, job):
         out.quoted_amount_cents = None
-    customer = session.get(Customer, job.customer_id)
+    customer = customers.get(job.customer_id) if customers is not None else session.get(Customer, job.customer_id)
     if customer is not None and customer.company_id == job.company_id:
         out.customer_name = customer.name
         out.customer_phone = customer.phone
@@ -98,7 +99,12 @@ def _check_refs(session: Session, company_id: UUID, customer_id=None, technician
 @router.get("/jobs", response_model=list[JobOut])
 def list_jobs(actor: Actor = Depends(current_actor), session: Session = Depends(get_session)):
     """Owners and dispatchers get every job; technicians get the jobs assigned to them."""
-    return [_job_out(j, actor, session) for j in visible_jobs(session, actor.user)]
+    found = visible_jobs(session, actor.user)
+    # Every job's customer in one query, not one query per job
+    ids = {j.customer_id for j in found}
+    customers = {c.id: c for c in session.scalars(
+        select(Customer).where(Customer.company_id == actor.user.company_id, Customer.id.in_(ids)))} if ids else {}
+    return [_job_out(j, actor, session, customers) for j in found]
 
 
 @router.post("/jobs", response_model=JobOut, status_code=201)
