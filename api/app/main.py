@@ -1,7 +1,7 @@
 from fastapi import Depends, FastAPI, Response
 
 from app.adapters.db.postgres import PostgresHealth
-from app.api import errors, routes_admin, routes_auth, routes_jobs, routes_tracking
+from app.api import errors, routes_admin, routes_auth, routes_booking, routes_jobs, routes_tracking
 from app.config import settings
 from app.ports.health import DatabaseHealthPort
 
@@ -17,6 +17,7 @@ app.include_router(routes_auth.router)
 app.include_router(routes_admin.router)
 app.include_router(routes_jobs.router)
 app.include_router(routes_tracking.router)
+app.include_router(routes_booking.router)
 
 
 def get_db_health() -> DatabaseHealthPort:

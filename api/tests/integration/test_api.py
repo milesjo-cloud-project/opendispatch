@@ -598,3 +598,166 @@ def test_tech_spend_alerts_the_owner_without_showing_the_tech(api, shop):
                json={"started_at": start.isoformat(), "ended_at": (start + timedelta(hours=14)).isoformat()})
     assert r["spend"] == {"budget": None, "alert": None}
     assert len(api.sms.sent) == 1  # $840 of $1,000 -> warning went to the owner
+
+
+# --- online booking
+
+def open_booking(api, shop) -> str:
+    """Turn the shop's booking link on and return its booking id."""
+    link = api.ok("POST", "/company/booking-link", shop["owner"], status=201)
+    assert link["path"] == f"/book/{link['booking_id']}"
+    return link["booking_id"]
+
+
+def book(api, booking_id, **overrides):
+    body = {"name": "Pat Jones", "title": "Leaking tap", "phone": "555-0100"} | overrides
+    return api.call("POST", f"/public/book/{booking_id}", json=body)
+
+
+def test_only_the_owner_controls_the_booking_link(api, shop):
+    for who in ["dispatcher", "tech"]:
+        assert api.call("POST", "/company/booking-link", shop[who]).status_code == 403
+        assert api.call("DELETE", "/company/booking-link", shop[who]).status_code == 403
+    assert api.call("POST", "/company/booking-link").status_code == 401
+
+
+def test_booking_link_on_replace_off(api, shop):
+    assert api.ok("GET", "/company", shop["owner"])["booking_id"] is None
+    first = open_booking(api, shop)
+    assert api.ok("GET", "/company", shop["owner"])["booking_id"] == first
+    assert api.ok("GET", f"/public/book/{first}") == {"company_name": "Test Drain Co"}
+
+    second = open_booking(api, shop)
+    assert api.call("GET", f"/public/book/{first}").status_code == 404  # replaced
+    assert book(api, first).status_code == 404
+
+    api.ok("DELETE", "/company/booking-link", shop["owner"], status=204)
+    assert api.call("GET", f"/public/book/{second}").status_code == 404
+    assert book(api, second).status_code == 404
+
+
+def test_public_booking_needs_no_login_and_gives_nothing_away(api, shop):
+    booking_id = open_booking(api, shop)
+    r = book(api, booking_id, email="pat@example.com", preferred_time="weekday mornings")
+    assert r.status_code == 201, r.text
+    assert r.json() == {"company_name": "Test Drain Co"}  # no ids to look anything up with
+
+    inbox = api.ok("GET", "/booking-requests", shop["dispatcher"])
+    assert [(x["name"], x["email"], x["status"]) for x in inbox] == [("Pat Jones", "pat@example.com", "new")]
+    # Only a message so far: no new customer, no new job
+    assert len(api.ok("GET", "/customers", shop["dispatcher"])) == 1
+    assert len(api.ok("GET", "/jobs", shop["dispatcher"])) == 1
+
+
+@pytest.mark.parametrize("overrides", [
+    {"phone": None},                       # no way to reach them
+    {"name": ""},
+    {"title": "x" * 201},
+    {"email": "not-an-email"},
+    {"description": "x" * 5001},
+])
+def test_public_booking_validation(api, shop, overrides):
+    assert book(api, open_booking(api, shop), **overrides).status_code == 422
+
+
+def test_inbox_is_office_only(api, shop):
+    book(api, open_booking(api, shop))
+    request_id = api.ok("GET", "/booking-requests", shop["owner"])[0]["id"]
+    assert api.call("GET", "/booking-requests", shop["tech"]).status_code == 403
+    assert api.call("POST", f"/booking-requests/{request_id}/accept", shop["tech"], json={}).status_code == 403
+    assert api.call("POST", f"/booking-requests/{request_id}/decline", shop["tech"]).status_code == 403
+    assert api.call("GET", "/booking-requests").status_code == 401
+
+
+def test_accept_makes_a_job_the_office_then_schedules(api, shop):
+    book(api, open_booking(api, shop), description="Under the sink", preferred_time="mornings")
+    request_id = api.ok("GET", "/booking-requests", shop["dispatcher"])[0]["id"]
+
+    job = api.ok("POST", f"/booking-requests/{request_id}/accept", shop["dispatcher"], json={})
+    assert (job["status"], job["title"], job["customer_name"]) == ("requested", "Leaking tap", "Pat Jones")
+    assert job["description"] == "Under the sink\n\nPreferred time: mornings"
+    assert api.ok("GET", "/booking-requests", shop["dispatcher"]) == []  # out of the inbox
+    history = api.ok("GET", f"/jobs/{job['id']}/events", shop["dispatcher"])
+    assert [e["note"] for e in history] == ["Booked online"]
+
+    # From here it's an ordinary draft: give it a tech and a time, then schedule it
+    api.ok("PATCH", f"/jobs/{job['id']}", shop["dispatcher"],
+           json={"technician_id": shop["tech_profile"]["id"], "scheduled_start": START})
+    assert api.ok("POST", f"/jobs/{job['id']}/status", shop["dispatcher"],
+                  json={"status": "scheduled"})["status"] == "scheduled"
+
+
+def test_accept_for_an_existing_customer(api, shop):
+    book(api, open_booking(api, shop))
+    request_id = api.ok("GET", "/booking-requests", shop["owner"])[0]["id"]
+    job = api.ok("POST", f"/booking-requests/{request_id}/accept", shop["owner"],
+                 json={"customer_id": shop["customer"]["id"]})
+    assert (job["customer_id"], job["customer_name"]) == (shop["customer"]["id"], "Jane Doe")
+    assert len(api.ok("GET", "/customers", shop["owner"])) == 1
+    # Decided once: a second click changes nothing
+    again = api.call("POST", f"/booking-requests/{request_id}/accept", shop["owner"], json={})
+    assert again.status_code == 422
+    assert len(api.ok("GET", "/jobs", shop["owner"])) == 2
+
+
+def test_decline(api, shop):
+    book(api, open_booking(api, shop))
+    request_id = api.ok("GET", "/booking-requests", shop["owner"])[0]["id"]
+    r = api.ok("POST", f"/booking-requests/{request_id}/decline", shop["dispatcher"])
+    assert (r["status"], r["job_id"]) == ("declined", None)
+    assert api.ok("GET", "/booking-requests", shop["owner"]) == []
+    assert api.call("POST", f"/booking-requests/{request_id}/accept", shop["owner"], json={}).status_code == 422
+
+
+def test_booking_requests_stay_inside_their_company(api, shop):
+    book(api, open_booking(api, shop))
+    request_id = api.ok("GET", "/booking-requests", shop["owner"])[0]["id"]
+    stranger, _ = api.signup()
+    assert api.ok("GET", "/booking-requests", stranger) == []
+    assert api.call("POST", f"/booking-requests/{request_id}/accept", stranger, json={}).status_code == 404
+    assert api.call("POST", f"/booking-requests/{request_id}/decline", stranger).status_code == 404
+    # ...and the shop can't accept into the stranger's customers
+    theirs = api.ok("POST", "/customers", stranger, status=201, json={"name": "Not yours"})
+    r = api.call("POST", f"/booking-requests/{request_id}/accept", shop["owner"], json={"customer_id": theirs["id"]})
+    assert r.status_code == 422
+
+
+def test_honeypot_looks_like_success_but_saves_nothing(api, shop):
+    r = book(api, open_booking(api, shop), website="http://cheap-pills.example")
+    assert (r.status_code, r.json()) == (201, {"company_name": "Test Drain Co"})  # same as a real booking
+    assert api.ok("GET", "/booking-requests", shop["owner"]) == []
+
+
+def test_bookings_are_limited_per_ip_across_every_company(api, shop, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "booking_limit_per_hour", 3)
+    ours = open_booking(api, shop)
+    other_owner, _ = api.signup()
+    theirs = api.ok("POST", "/company/booking-link", other_owner, status=201)["booking_id"]
+
+    assert book(api, ours).status_code == 201
+    assert book(api, theirs).status_code == 201
+    assert book(api, "a-wrong-link").status_code == 404  # guesses count too
+    r = book(api, ours)
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "3600"
+    assert book(api, theirs).status_code == 429  # one spammer, every link
+    assert len(api.ok("GET", "/booking-requests", shop["owner"])) == 1
+
+
+def test_limit_uses_the_address_the_trusted_proxy_saw(api, shop, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "booking_limit_per_hour", 1)
+    monkeypatch.setattr(settings, "trusted_proxy_hops", 1)
+    booking_id = open_booking(api, shop)
+    body = {"name": "Pat", "title": "Tap", "phone": "555-0100"}
+
+    def from_(chain):
+        return api.client.post(f"/public/book/{booking_id}", json=body,
+                               headers={"X-Forwarded-For": chain}).status_code
+
+    assert from_("203.0.113.7") == 201
+    assert from_("203.0.113.7") == 429
+    assert from_("198.51.100.1") == 201  # a different customer behind the same proxy
+    # Faking an earlier entry doesn't help: the proxy's own entry (rightmost) is used
+    assert from_("10.9.9.9, 203.0.113.7") == 429

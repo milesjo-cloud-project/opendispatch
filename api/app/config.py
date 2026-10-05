@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     app_base_url: str = "http://localhost:5173"
     upload_dir: str = "./uploads"
 
+    # Online booking spam control: bookings one IP address can send per hour, across every
+    # company's link. Raise it if many customers share one address (an office, a campus).
+    booking_limit_per_hour: int = 5
+    # How many proxies sit in front of the API and add to X-Forwarded-For (a load balancer,
+    # a dev server). 0 = clients connect directly. Too high lets a client pick its own address
+    # (fewer limits); too low puts everyone behind the proxy in one shared limit.
+    trusted_proxy_hops: int = 0
+
     @property
     def email_configured(self) -> bool:
         return bool(self.smtp_host)

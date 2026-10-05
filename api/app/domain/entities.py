@@ -42,6 +42,8 @@ class Company:
     expense_approval_limit_cents: int = DEFAULT_EXPENSE_APPROVAL_LIMIT_CENTS
     # Texting budget alerts costs money per message, so it's opt-in (a paid add-on later).
     sms_alerts_enabled: bool = False
+    # The <id> in the public /book/<id> link. None = online booking is off (the default).
+    booking_id: str | None = None
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=_now)
 
