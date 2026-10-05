@@ -471,12 +471,14 @@ function JobEditor({
               </ul>
             )}
           </section>
-          {["invoiced", "paid"].includes(job.status) && !readOnly && (
+          {/* Mirrors NOT_SHAREABLE in api/app/jobs/tracking.py */}
+          {!["requested", "cancelled"].includes(job.status) && !readOnly && (
             <section className="tracking-tools">
               <div>
                 <h3>Customer tracking</h3>
                 <p>
-                  Create a private 90-day link for the invoice recipient. Creating a new link replaces the previous one.
+                  Send the customer a private 90-day link to follow this job, from arrival time to payment. Creating a
+                  new link replaces the previous one.
                 </p>
               </div>
               <button className="quiet" onClick={createTrackingLink} disabled={linkBusy}>
