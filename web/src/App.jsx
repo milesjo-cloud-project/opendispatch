@@ -4,6 +4,7 @@ import {
   canReassign,
   canReschedule,
   canUnassign,
+  centsToDollars,
   post,
   request,
   saveToken,
@@ -11,20 +12,10 @@ import {
   statusActions,
   statusName,
 } from "./api.js";
+import BookingPage from "./BookingPage.jsx";
+import Gear from "./Gear.jsx";
 import { CustomersPage, NewJobDialog, TeamPage, initials } from "./pages.jsx";
-
-function Gear() {
-  const teeth = Array.from({ length: 8 }, (_, i) => (
-    <rect key={i} x="21" y="2" width="6" height="9" rx="1" transform={`rotate(${i * 45} 24 24)`} />
-  ));
-  return (
-    <svg className="gear" viewBox="0 0 48 48" aria-hidden="true">
-      {teeth}
-      <circle cx="24" cy="24" r="14" />
-      <circle cx="24" cy="24" r="5.5" className="gear-hole" />
-    </svg>
-  );
-}
+import { RequestsPage } from "./RequestsPage.jsx";
 
 const dateKey = (date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -388,6 +379,15 @@ function JobEditor({
               <span>Job status</span>
               <strong>{statusName(job.status)}</strong>
             </div>
+            {/* The API leaves the quote out for techs, so this is office only */}
+            {!readOnly && (
+              <div className="editor-field">
+                <span>Quote</span>
+                <strong>
+                  {job.quoted_amount_cents != null ? centsToDollars(job.quoted_amount_cents) : "No quote"}
+                </strong>
+              </div>
+            )}
           </div>
           {(actions.length > 0 || canCancel(job.status, readOnly)) && (
             <section className="status-actions" aria-label="Job progress">
@@ -505,8 +505,9 @@ function JobEditor({
             </>
           ) : (
             <>
+              {/* Not "Cancel": next to the status buttons that reads like cancelling the job */}
               <button className="quiet" onClick={onClose} disabled={saving}>
-                Cancel
+                Close
               </button>
               <span className="actions-spacer" />
               {job.status === "requested" && (
@@ -547,6 +548,7 @@ export default function App() {
   const [jobs, setJobs] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [bookingRequests, setBookingRequests] = useState([]); // new ones only, office only
   const [selected, setSelected] = useState(null);
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -565,6 +567,7 @@ export default function App() {
     saveToken(null);
     setAuth(null);
     setJobs([]);
+    setBookingRequests([]);
     setSelected(null);
     setCreating(false);
     setPage("Schedule");
@@ -590,19 +593,21 @@ export default function App() {
     setError("");
     try {
       const nextJobs = await request("/jobs", token);
-      const [nextTechs, nextCustomers] = await Promise.all(
+      const [nextTechs, nextCustomers, nextRequests] = await Promise.all(
         isTechnician
           ? [
               Promise.resolve([{ id: auth.user.technician_id, display_name: "My schedule", active: true }]),
               Promise.resolve(
                 nextJobs.map((job) => ({ id: job.customer_id, name: job.customer_name, phone: job.customer_phone })),
               ),
+              Promise.resolve([]),
             ]
-          : [request("/technicians", token), request("/customers", token)],
+          : [request("/technicians", token), request("/customers", token), request("/booking-requests", token)],
       );
       setJobs(nextJobs);
       setTechnicians(nextTechs);
       setCustomers(nextCustomers);
+      setBookingRequests(nextRequests);
     } catch (e) {
       if (e.status === 401) signedOut("Your session ended. Please sign in again.");
       else setError(e.message);
@@ -719,6 +724,8 @@ export default function App() {
 
   const trackingToken = window.location.pathname.match(/^\/track\/([^/]+)\/?$/)?.[1];
   if (trackingToken) return <CustomerTracking token={trackingToken} />;
+  const bookingId = window.location.pathname.match(/^\/book\/([^/]+)\/?$/)?.[1];
+  if (bookingId) return <BookingPage bookingId={bookingId} />;
   if (resetToken !== null)
     return (
       <ResetPassword
@@ -741,7 +748,7 @@ export default function App() {
     );
   if (!auth) return <Login key={loginNotice} notice={loginNotice} onLogin={signIn} />;
 
-  const pages = isTechnician ? ["Schedule", "Jobs"] : ["Schedule", "Jobs", "Customers", "Team"];
+  const pages = isTechnician ? ["Schedule", "Jobs"] : ["Schedule", "Jobs", "Requests", "Customers", "Team"];
   const headings = {
     Schedule: isTechnician
       ? ["My schedule", "Your assigned jobs for the week."]
@@ -749,6 +756,12 @@ export default function App() {
     Jobs: [
       isTechnician ? "My jobs" : "All jobs",
       `${jobs.length} job${jobs.length === 1 ? "" : "s"}${isTechnician ? " assigned to you" : " in your workspace"}`,
+    ],
+    Requests: [
+      "Requests",
+      bookingRequests.length
+        ? `${bookingRequests.length} new request${bookingRequests.length === 1 ? "" : "s"} from your booking link`
+        : "Jobs customers asked for through your booking link",
     ],
     Customers: ["Customers", `${customers.length} customer${customers.length === 1 ? "" : "s"}`],
     Team: ["Team", "Owners, dispatchers and technicians"],
@@ -771,6 +784,11 @@ export default function App() {
               onClick={() => setPage(item)}
             >
               {item}
+              {item === "Requests" && bookingRequests.length > 0 && (
+                <span className="nav-count" aria-label={`${bookingRequests.length} new`}>
+                  {bookingRequests.length}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -789,7 +807,7 @@ export default function App() {
             <p className="muted">{subtitle}</p>
           </div>
           <div className="heading-actions">
-            {["Schedule", "Jobs"].includes(page) && (
+            {["Schedule", "Jobs", "Requests"].includes(page) && (
               <button className="quiet" onClick={load} disabled={loading}>
                 {loading ? "Refreshing…" : "Refresh"}
               </button>
@@ -999,6 +1017,19 @@ export default function App() {
               {isTechnician ? "No jobs are assigned to you yet." : "No jobs yet. Use “New job” to add one."}
             </div>
           ))}
+        {page === "Requests" && (
+          <RequestsPage
+            token={token}
+            isOwner={isOwner}
+            requests={bookingRequests}
+            customers={customers}
+            onChanged={load}
+            onAccepted={async (job) => {
+              await load(); // picks up the job and, if one was made, the new customer
+              setSelected(job); // straight into the editor to give it a tech and a time
+            }}
+          />
+        )}
         {page === "Customers" && <CustomersPage token={token} customers={customers} onChanged={load} />}
         {page === "Team" && (
           <TeamPage token={token} isOwner={isOwner} meId={auth.user?.id} technicians={technicians} onChanged={load} />
