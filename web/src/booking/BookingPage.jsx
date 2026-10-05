@@ -1,8 +1,8 @@
 // The public /book/<booking_id> page: a customer asks for a job, no login needed.
 // What they send waits in the office's Requests view; nothing is booked until the office accepts it.
 import { useEffect, useState } from "react";
-import { post, request } from "./api.js";
-import Gear from "./Gear.jsx";
+import { post, request } from "../api.js";
+import Gear from "../components/Gear.jsx";
 
 const EMPTY = {
   title: "",
