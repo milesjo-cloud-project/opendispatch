@@ -17,15 +17,20 @@ from app.spend.service import NotFound
 
 router = APIRouter(tags=["customer tracking"])
 
+# A draft has no time to share yet, and a cancelled job has nothing to follow. A link made
+# earlier keeps working after a cancel, so the customer sees that it was cancelled.
+NOT_SHAREABLE = {JobStatus.REQUESTED, JobStatus.CANCELLED}
+
 
 @router.post("/jobs/{job_id}/tracking-link", response_model=TrackingLinkOut, status_code=201)
 def create_tracking_link(job_id: UUID, actor: Actor = Depends(office_actor), session: Session = Depends(get_session)):
-    """Create or rotate an invoice tracking URL. Only invoiced jobs can be shared."""
+    """Create or replace the customer's tracking link, from Scheduled on."""
     job = session.get(Job, job_id)
     if job is None or job.company_id != actor.user.company_id:
         raise NotFound(f"Job {job_id}")
-    if job.status not in {JobStatus.INVOICED, JobStatus.PAID}:
-        raise HTTPException(status.HTTP_409_CONFLICT, "A tracking link is available after invoicing")
+    if job.status in NOT_SHAREABLE:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "A tracking link is available once the job is scheduled, and not for cancelled jobs")
     token = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc)
     session.execute(delete(job_tracking_links).where(job_tracking_links.c.job_id == job.id))

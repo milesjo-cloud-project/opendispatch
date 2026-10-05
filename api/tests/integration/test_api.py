@@ -415,19 +415,31 @@ def test_create_job_is_all_or_nothing(api, shop):
     assert neither.status_code == both.status_code == 422
 
 
-def test_invoice_customer_tracking_link_and_live_status(api, shop):
+def test_customer_tracking_link_from_scheduled_with_live_status(api, shop):
     job_id = shop["job"]["id"]
-    for next_status in ["scheduled", "dispatched", "en_route", "in_progress", "completed", "invoiced"]:
-        api.ok("POST", f"/jobs/{job_id}/status", shop["owner"],
-               json={"status": next_status})
+    assert api.call("POST", f"/jobs/{job_id}/tracking-link", shop["dispatcher"]).status_code == 409  # draft
+    api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "scheduled"})
 
     link = api.ok("POST", f"/jobs/{job_id}/tracking-link", shop["dispatcher"], status=201)
     token = link["path"].rsplit("/", 1)[1]
     current = api.ok("GET", f"/public/tracking/{token}")
-    assert current["title"] == "Water heater"
-    assert current["status"] == "invoiced"
+    assert (current["title"], current["status"]) == ("Water heater", "scheduled")
     assert current["scheduled_start"] is not None
+
+    # The same link follows the job as it moves
+    for next_status in ["dispatched", "en_route", "in_progress", "completed", "invoiced"]:
+        api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": next_status})
+    assert api.ok("GET", f"/public/tracking/{token}")["status"] == "invoiced"
     assert api.call("GET", "/public/tracking/not-a-valid-link").status_code == 404
+
+
+def test_no_tracking_link_for_a_cancelled_job_but_an_old_one_shows_it(api, shop):
+    job_id = shop["job"]["id"]
+    api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "scheduled"})
+    token = api.ok("POST", f"/jobs/{job_id}/tracking-link", shop["owner"], status=201)["path"].rsplit("/", 1)[1]
+    api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "cancelled"})
+    assert api.call("POST", f"/jobs/{job_id}/tracking-link", shop["owner"]).status_code == 409
+    assert api.ok("GET", f"/public/tracking/{token}")["status"] == "cancelled"
 
 
 def test_job_attachments_accept_image_types_and_pdf(api, shop, tmp_path, monkeypatch):
