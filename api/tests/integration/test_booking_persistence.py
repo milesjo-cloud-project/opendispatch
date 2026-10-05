@@ -8,8 +8,8 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy.exc import IntegrityError
 
-from app.adapters.db.tables import booking_requests, metadata
-from app.domain.booking import BookingRequest, BookingRequestStatus
+from app.booking.domain import BookingRequest, BookingRequestStatus
+from app.db.tables import booking_requests, metadata
 
 from .tenants import make_job
 

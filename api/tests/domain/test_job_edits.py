@@ -4,9 +4,9 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.entities import Job
-from app.domain.errors import DomainRuleViolation
-from app.domain.job_status import JobStatus
+from app.shared.errors import DomainRuleViolation
+from app.shared.job_status import JobStatus
+from app.shared.models import Job
 
 S = JobStatus
 NINE = datetime(2026, 10, 1, 9, 0, tzinfo=timezone.utc)

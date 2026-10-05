@@ -3,9 +3,9 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.entities import Company, Customer, ExpenseStatus, Job, User
-from app.domain.errors import DomainRuleViolation
-from app.domain.job_status import JobStatus
+from app.shared.errors import DomainRuleViolation
+from app.shared.job_status import JobStatus
+from app.shared.models import Company, Customer, ExpenseStatus, Job, User
 
 LIMIT = 50_000  # $500.00
 

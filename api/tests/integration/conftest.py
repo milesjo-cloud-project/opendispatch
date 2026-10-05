@@ -13,7 +13,7 @@ from .tenants import make_tenant
 
 @pytest.fixture
 def session():
-    from app.adapters.db.session import make_session_factory
+    from app.db.session import make_session_factory
 
     url = os.getenv("TEST_DATABASE_URL")
     if not url:
@@ -50,8 +50,8 @@ def tx_session():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
-    from app.adapters.db.session import sqlalchemy_url
-    from app.adapters.db.tables import start_mappers
+    from app.db.session import sqlalchemy_url
+    from app.db.tables import start_mappers
 
     url = os.getenv("TEST_DATABASE_URL")
     if not url:

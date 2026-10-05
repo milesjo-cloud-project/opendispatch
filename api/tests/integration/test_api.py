@@ -9,15 +9,14 @@ import pytest
 from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 
-from app.adapters.email.fake import FakeEmail
-from app.adapters.notifications.fake import FakeNotifier
-from app.adapters.notifications.sms import SmsNotifier
-from app.adapters.passwords.argon2 import Argon2Hasher
-from app.adapters.sms.fake import FakeSms
-from app.api.deps import get_alert_sender, get_email, get_hasher, get_session
-from app.domain.auth import MAX_FAILED_LOGINS, MAX_RESETS_PER_HOUR
+from app.adapters.email import FakeEmail
+from app.adapters.notifications import FakeNotifier, SmsNotifier
+from app.adapters.passwords import Argon2Hasher
+from app.adapters.sms import FakeSms
+from app.auth.domain import MAX_FAILED_LOGINS, MAX_RESETS_PER_HOUR
 from app.main import app
-from app.services.spend import send_pending_alerts
+from app.shared.deps import get_alert_sender, get_email, get_hasher, get_session
+from app.spend.service import send_pending_alerts
 
 pytestmark = pytest.mark.integration
 
@@ -432,8 +431,8 @@ def test_invoice_customer_tracking_link_and_live_status(api, shop):
 
 
 def test_job_attachments_accept_image_types_and_pdf(api, shop, tmp_path, monkeypatch):
-    from app.adapters.storage.filesystem import FileSystemStorage
-    from app.api import routes_jobs
+    from app.adapters.storage import FileSystemStorage
+    from app.jobs import routes as routes_jobs
 
     monkeypatch.setattr(routes_jobs, "_storage", FileSystemStorage(str(tmp_path)))
     path = f"/jobs/{shop['job']['id']}/attachments"

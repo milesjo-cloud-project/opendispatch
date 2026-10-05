@@ -1,6 +1,6 @@
 import pytest
 
-from app.api.routes_jobs import _attachment_content_type
+from app.jobs.routes import _attachment_content_type
 
 
 @pytest.mark.parametrize("mime", ["image/jpeg", "image/png", "image/heic", "image/avif", "image/svg+xml"])

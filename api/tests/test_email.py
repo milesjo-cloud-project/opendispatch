@@ -3,9 +3,8 @@ import logging
 
 import pytest
 
-from app.adapters.email import smtp as smtp_module
-from app.adapters.email.log import LogEmail
-from app.adapters.email.smtp import SmtpEmail
+from app.adapters import email as smtp_module
+from app.adapters.email import LogEmail, SmtpEmail
 
 
 class FakeSmtp:

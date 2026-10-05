@@ -5,9 +5,9 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.entities import Job
-from app.domain.errors import DomainRuleViolation, IllegalTransition
-from app.domain.job_status import ALLOWED, TERMINAL, JobStatus
+from app.shared.errors import DomainRuleViolation, IllegalTransition
+from app.shared.job_status import ALLOWED, TERMINAL, JobStatus
+from app.shared.models import Job
 
 S = JobStatus
 

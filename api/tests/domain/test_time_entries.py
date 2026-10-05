@@ -4,10 +4,10 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.budget import BudgetAlert, BudgetLevel, job_budget
-from app.domain.entities import Company, Job, Technician, User
-from app.domain.errors import DomainRuleViolation
-from app.domain.job_status import JobStatus
+from app.shared.errors import DomainRuleViolation
+from app.shared.job_status import JobStatus
+from app.shared.models import Company, Job, Technician, User
+from app.spend.budget import BudgetAlert, BudgetLevel, job_budget
 
 T0 = datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)
 RATE = 6_000  # $60.00/hour

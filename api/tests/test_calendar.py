@@ -1,7 +1,7 @@
 from uuid import uuid4
 
-from app.adapters.calendar.fake import FakeCalendar
-from app.domain.entities import Job
+from app.adapters.calendar import FakeCalendar
+from app.shared.models import Job
 
 
 def test_fake_calendar_round_trip():

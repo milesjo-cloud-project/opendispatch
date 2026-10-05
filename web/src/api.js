@@ -61,7 +61,7 @@ export const statusName = (value) =>
     cancelled: "Cancelled",
   })[value] || value;
 
-// Mirrors ALLOWED in api/app/domain/job_status.py; the API still has the final say.
+// Mirrors ALLOWED in api/app/shared/job_status.py; the API still has the final say.
 const NEXT = {
   requested: ["scheduled"],
   scheduled: ["dispatched"],
@@ -71,7 +71,7 @@ const NEXT = {
   completed: ["invoiced"],
   invoiced: ["paid"],
 };
-// Mirrors TECH_STATUS_MOVES in api/app/domain/access.py
+// Mirrors TECH_STATUS_MOVES in api/app/shared/access.py
 const TECH_MOVES = ["en_route", "in_progress", "completed"];
 const CANCELLABLE = ["requested", "scheduled", "dispatched", "en_route", "in_progress"];
 const ACTION_LABEL = {
@@ -93,7 +93,7 @@ export function statusActions(status, isTechnician) {
 }
 export const canCancel = (status, isTechnician) => !isTechnician && CANCELLABLE.includes(status);
 
-// Mirrors REASSIGNABLE, UNASSIGNABLE and RESCHEDULABLE in api/app/domain/entities.py
+// Mirrors REASSIGNABLE, UNASSIGNABLE and RESCHEDULABLE in api/app/shared/models.py
 export const canReassign = (status) =>
   ["requested", "scheduled", "dispatched", "en_route", "in_progress"].includes(status);
 export const canUnassign = (status) => ["requested", "scheduled"].includes(status);

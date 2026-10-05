@@ -1,9 +1,14 @@
 from fastapi import Depends, FastAPI, Response
 
-from app.adapters.db.postgres import PostgresHealth
-from app.api import errors, routes_admin, routes_auth, routes_booking, routes_jobs, routes_tracking
+from app.auth import routes as auth_routes
+from app.booking import routes as booking_routes
+from app.company import routes as company_routes
 from app.config import settings
-from app.ports.health import DatabaseHealthPort
+from app.db.health import PostgresHealth
+from app.jobs import routes as job_routes
+from app.jobs import tracking as tracking_routes
+from app.shared import http_errors
+from app.shared.ports import DatabaseHealthPort
 
 # Interactive docs only locally; in dev/prod they'd advertise every endpoint to anyone.
 app = FastAPI(
@@ -12,12 +17,12 @@ app = FastAPI(
     redoc_url="/redoc" if settings.is_local else None,
     openapi_url="/openapi.json" if settings.is_local else None,
 )
-errors.register(app)
-app.include_router(routes_auth.router)
-app.include_router(routes_admin.router)
-app.include_router(routes_jobs.router)
-app.include_router(routes_tracking.router)
-app.include_router(routes_booking.router)
+http_errors.register(app)
+app.include_router(auth_routes.router)
+app.include_router(company_routes.router)
+app.include_router(job_routes.router)
+app.include_router(tracking_routes.router)
+app.include_router(booking_routes.router)
 
 
 def get_db_health() -> DatabaseHealthPort:

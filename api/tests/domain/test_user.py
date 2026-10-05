@@ -3,8 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.domain.entities import User, UserRole
-from app.domain.errors import DomainRuleViolation
+from app.shared.errors import DomainRuleViolation
+from app.shared.models import User, UserRole
 
 
 def test_email_is_normalized():

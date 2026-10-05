@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import select, text
 
-from app.domain.entities import Company, Customer, Job, JobEvent, Technician, User
-from app.domain.errors import IllegalTransition
-from app.domain.job_status import JobStatus
+from app.shared.errors import IllegalTransition
+from app.shared.job_status import JobStatus
+from app.shared.models import Company, Customer, Job, JobEvent, Technician, User
 
 pytestmark = pytest.mark.integration
 

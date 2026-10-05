@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
-from app.domain.budget import BudgetLevel, job_budget
-from app.domain.entities import Expense, ExpenseStatus, Job
+from app.shared.models import Expense, ExpenseStatus, Job
+from app.spend.budget import BudgetLevel, job_budget
 
 from .tenants import Tenant, make_job
 
