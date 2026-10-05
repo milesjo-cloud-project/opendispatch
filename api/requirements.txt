@@ -1,6 +1,6 @@
 # Exact versions, so every install (CI, Docker, your machine) gets the same code.
 # Dependabot opens one grouped PR a week to move them; CI tests the bump before it merges.
-fastapi==0.141.1
+fastapi==0.142.2
 uvicorn[standard]==0.54.0
 psycopg[binary]==3.3.6
 pydantic-settings==2.15.0
