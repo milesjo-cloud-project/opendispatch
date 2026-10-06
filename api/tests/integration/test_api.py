@@ -492,6 +492,11 @@ def test_inactive_technician_cant_take_new_jobs(api, shop):
 
 # --- roles and companies
 
+def test_company_settings_are_office_only(api, shop):
+    assert api.call("GET", "/company", shop["tech"]).status_code == 403
+    assert api.ok("GET", "/company", shop["dispatcher"])["id"] == api.ok("GET", "/company", shop["owner"])["id"]
+
+
 def test_owner_only_settings(api, shop):
     body = {"expense_approval_limit_cents": 25_000, "sms_alerts_enabled": True}
     assert api.call("PATCH", "/company", shop["dispatcher"], json=body).status_code == 403
