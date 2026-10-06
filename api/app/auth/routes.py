@@ -18,6 +18,7 @@ from app.auth.schemas import (
     ResetConfirmIn,
     ResetRequestIn,
     SignupIn,
+    SignupStatusOut,
     TokenOut,
 )
 from app.config import settings
@@ -58,13 +59,20 @@ def token_out(result: auth.LoginResult, technician=None) -> TokenOut:
                     user=me_out(result.user, technician))
 
 
+@router.get("/auth/signup", response_model=SignupStatusOut)
+def signup_status(session: Session = Depends(get_session)):
+    """Whether this server takes new companies right now (settings.signup), so the sign-in
+    page only offers "Sign up" when it would work."""
+    return SignupStatusOut(open=auth.signup_open(session, settings.signup))
+
+
 @router.post("/auth/signup", response_model=TokenOut, status_code=201)
 def signup(body: SignupIn, request: Request, session: Session = Depends(get_session),
            hasher: PasswordHasherPort = Depends(get_hasher)):
-    """Create a company and its owner account, and log in."""
+    """Create a company and its owner account, and log in. 403 when sign-up is closed."""
     _limit(session, request, "signup", settings.signup_limit_per_hour, "sign-ups")
-    result = auth.signup(session, hasher, company_name=body.company_name, email=body.email,
-                         password=body.password, phone=body.phone)
+    result = auth.signup(session, hasher, mode=settings.signup, company_name=body.company_name,
+                         email=body.email, password=body.password, phone=body.phone)
     session.commit()
     return token_out(result)
 

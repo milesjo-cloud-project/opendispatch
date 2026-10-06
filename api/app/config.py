@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -21,6 +23,11 @@ class Settings(BaseSettings):
     smtp_username: str | None = None
     smtp_password: SecretStr | None = None
     email_from: str = "OpenDispatch <no-reply@localhost>"
+
+    # Who may create a new company (POST /auth/signup). "first-run": only while the server
+    # has no company yet, so a contractor's own install is theirs alone once set up.
+    # "open": anyone, for a hosted service or local demos. "closed": nobody; owners add people.
+    signup: Literal["open", "first-run", "closed"] = "first-run"
 
     # Where the web app lives, for links in emails
     app_base_url: str = "http://localhost:5173"

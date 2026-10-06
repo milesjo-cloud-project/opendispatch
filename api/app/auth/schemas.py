@@ -15,6 +15,10 @@ class SignupIn(BaseModel):
     phone: str | None = Field(default=None, max_length=32)
 
 
+class SignupStatusOut(BaseModel):
+    open: bool
+
+
 class LoginIn(BaseModel):
     email: str = Field(max_length=320)
     password: str = Password()

@@ -1,6 +1,6 @@
 // Sign in, sign up and "forgot password" on one card.
-import { useState } from "react";
-import { post } from "../api.js";
+import { useEffect, useState } from "react";
+import { post, request } from "../api.js";
 import Gear from "../components/Gear.jsx";
 
 export default function Login({ onLogin, notice = "" }) {
@@ -9,6 +9,13 @@ export default function Login({ onLogin, notice = "" }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState(notice);
+  // Only offer "Sign up" when this server takes new companies (the SIGNUP setting)
+  const [signupOpen, setSignupOpen] = useState(false);
+  useEffect(() => {
+    request("/auth/signup")
+      .then((status) => setSignupOpen(status.open))
+      .catch(() => setSignupOpen(false));
+  }, []);
   const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) });
   const switchTo = (next) => {
     setMode(next);
@@ -107,9 +114,11 @@ export default function Login({ onLogin, notice = "" }) {
               <button type="button" className="link-button" onClick={() => switchTo("forgot")}>
                 Forgot password?
               </button>
-              <button type="button" className="link-button" onClick={() => switchTo("signup")}>
-                New company? Sign up
-              </button>
+              {signupOpen && (
+                <button type="button" className="link-button" onClick={() => switchTo("signup")}>
+                  New company? Sign up
+                </button>
+              )}
             </>
           ) : (
             <button type="button" className="link-button" onClick={() => switchTo("login")}>

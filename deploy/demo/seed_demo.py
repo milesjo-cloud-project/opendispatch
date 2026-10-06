@@ -6,8 +6,9 @@ board, online booking turned on, and requests waiting in the inbox.
 
 Each run makes a NEW company with its own logins (the --tag goes in every email), so it
 never touches existing data and can be run again before every rehearsal. Standard library
-only. Online booking counts per IP address, so set BOOKING_LIMIT_PER_HOUR=50 in .env for
-rehearsals: each run sends 3 bookings, and the demo sends one more.
+only. Needs SIGNUP=open in .env (each run signs up a company). Online booking counts per
+IP address, so set BOOKING_LIMIT_PER_HOUR=50 in .env for rehearsals: each run sends 3
+bookings, and the demo sends one more.
 """
 import argparse
 import json
@@ -57,6 +58,9 @@ def main() -> None:
     api, tag = Api(args.api), args.tag
     email = lambda who: f"{who}-{tag}@riverside.example"  # noqa: E731  (.example never delivers mail)
 
+    if not api.call("GET", "/auth/signup")["open"]:
+        sys.exit("This server isn't taking new sign-ups, and each run makes a new company.\n"
+                 "Set SIGNUP=open in .env, then run `docker compose up -d` and try again.")
     owner = api.call("POST", "/auth/signup", body={"company_name": COMPANY, "email": email("owner"),
                                                    "password": PASSWORD})["token"]
     api.call("POST", "/users", owner, {"email": email("dispatch"), "role": "dispatcher", "password": PASSWORD})

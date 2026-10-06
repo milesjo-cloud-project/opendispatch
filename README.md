@@ -92,7 +92,10 @@ Money is stored as whole cents (`50_000` = $500.00), never floats.
 
 ## Using the app
 
-Open http://localhost:5173 and choose **New company? Sign up**. You're the owner. From there:
+Open http://localhost:5173 and choose **New company? Sign up**. You're the owner. By default
+(`SIGNUP=first-run` in `.env`) that link then disappears: your server is yours, and nobody
+else can create a company on it. Use `SIGNUP=open` for a hosted service with many companies,
+or to run the demo seed more than once. Once you're in:
 
 - **Team**: add dispatchers and technicians with a starting password (owners only).
   Technicians get a lane on the schedule and, on their phone, a **Today** list.
