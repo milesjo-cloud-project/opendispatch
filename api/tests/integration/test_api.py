@@ -138,6 +138,32 @@ def test_account_locks_after_repeated_failures(api, no_ip_limits):
     assert r.status_code == 401
 
 
+def change_password(api, token, current, new="a brand new password"):
+    return api.call("POST", "/me/password", token, json={"current_password": current, "new_password": new})
+
+
+def test_wrong_current_passwords_count_toward_the_lockout(api):
+    """A stolen login token can't be used to guess the real password."""
+    token, user = api.signup()
+    for _ in range(MAX_FAILED_LOGINS):
+        assert change_password(api, token, "a wrong guess!!").status_code == 403
+    r = change_password(api, token, PASSWORD)  # even the right one, while locked
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "900"
+    assert "reset your password" in r.json()["detail"]
+    assert login(api, user["email"], PASSWORD).status_code == 401  # the same lock as sign-in
+
+
+def test_changing_password_clears_earlier_wrong_guesses(api):
+    token, user = api.signup()
+    for _ in range(MAX_FAILED_LOGINS - 1):
+        change_password(api, token, "a wrong guess!!")
+    api.ok("POST", "/me/password", token, status=204,
+           json={"current_password": PASSWORD, "new_password": NEW_PASSWORD})
+    assert change_password(api, token, "a wrong guess!!").status_code == 403  # a fresh count, not locked
+    api.ok("POST", "/auth/login", json={"email": user["email"], "password": NEW_PASSWORD})
+
+
 def test_signup_rules(api):
     _, user = api.signup()
     dup = api.call("POST", "/auth/signup", json={"company_name": "X", "email": user["email"], "password": PASSWORD})

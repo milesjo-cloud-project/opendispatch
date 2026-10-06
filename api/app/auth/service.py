@@ -26,6 +26,11 @@ class InvalidCredentials(Exception):
     """Wrong email, wrong password, no password set, or locked. Deliberately one error for all."""
 
 
+class AccountLocked(InvalidCredentials):
+    """Too many wrong passwords. Only raised to someone already signed in (changing their
+    password), who has nothing left to learn from it; login keeps the one error for all."""
+
+
 class EmailTaken(Exception):
     pass
 
@@ -182,10 +187,22 @@ def logout(auth_session: AuthSession) -> None:
 def change_password(
     session: Session, hasher: PasswordHasherPort, *,
     user: User, current_password: str, new_password: str, keep: AuthSession,
+    now: datetime | None = None,
 ) -> None:
-    """Also logs out every other device, in case the old password was the problem."""
+    """Also logs out every other device, in case the old password was the problem.
+
+    A wrong current password counts toward the same lockout as a wrong login, so a stolen
+    login token can't be used to guess the real password. Raises InvalidCredentials (the
+    caller must COMMIT even then, so the count is saved), or AccountLocked while locked.
+    """
+    now = now or datetime.now(timezone.utc)
+    if user.is_locked(now):
+        raise AccountLocked()
     if user.password_hash is None or not hasher.verify(user.password_hash, current_password):
+        user.record_failed_login(now)
+        session.flush()
         raise InvalidCredentials()
+    user.record_successful_login()
     check_password_policy(new_password)
     user.password_hash = hasher.hash(new_password)
     _revoke_other_sessions(session, user, keep)
