@@ -127,6 +127,7 @@ Point out:
 | What you see | What to do |
 |---|---|
 | "Too many booking requests" on the booking page | The booking limit is still 5. Set `BOOKING_LIMIT_PER_HOUR=50` in `.env`, then `docker compose up -d`. |
+| The seed says "Too many sign-ups" | Each seed run signs up a company, and one address gets 5 an hour. Set `SIGNUP_LIMIT_PER_HOUR=50` in `.env`, then `docker compose up -d`. |
 | "Online booking isn't available" | The link was replaced or turned off. Use the link the seed printed, or copy the current one from the Requests tab. |
 | Can't sign in | Check the tag in the email matches the last seed run, and the password is `demo-password-2026`. |
 | The Requests badge hasn't appeared | Click **Refresh**. The page checks by itself only once a minute. |

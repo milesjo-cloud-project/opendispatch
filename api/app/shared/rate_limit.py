@@ -3,6 +3,9 @@ hold across several API processes. The caller commits.
 
     if not rate_limit.allow(session, "booking", ip, limit=5, window=timedelta(hours=1)):
         ...answer 429
+
+To count only some requests (login counts failures, not every sign-in), check with
+over_limit() first and call hit() for the ones that count.
 """
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -14,13 +17,15 @@ from sqlalchemy.orm import Session
 from app.db.tables import rate_limit_hits
 
 
-def allow(session: Session, bucket: str, key: str, *, limit: int, window: timedelta,
-          now: datetime | None = None) -> bool:
-    """Count one hit for `key` and say whether it's within `limit` hits per `window`.
-    A refused hit isn't counted, so someone who keeps trying is let back in once their
-    earlier hits age out, not kept out for good."""
+def _key_hash(bucket: str, key: str) -> str:
+    return hashlib.sha256(f"{bucket}:{key}".encode()).hexdigest()
+
+
+def over_limit(session: Session, bucket: str, key: str, *, limit: int, window: timedelta,
+               now: datetime | None = None) -> bool:
+    """Whether `key` already has `limit` hits in the last `window`. Counts nothing."""
     now = now or datetime.now(timezone.utc)
-    key_hash = hashlib.sha256(f"{bucket}:{key}".encode()).hexdigest()
+    key_hash = _key_hash(bucket, key)
     # One key at a time until commit, so two requests at once can't both squeeze in under the limit
     session.execute(select(func.pg_advisory_xact_lock(func.hashtext(key_hash))))
     # Old hits are never needed again; dropping them here keeps the table small
@@ -30,8 +35,22 @@ def allow(session: Session, bucket: str, key: str, *, limit: int, window: timede
         select(func.count()).select_from(rate_limit_hits)
         .where(rate_limit_hits.c.bucket == bucket, rate_limit_hits.c.key_hash == key_hash)
     )
-    if recent >= limit:
+    return recent >= limit
+
+
+def hit(session: Session, bucket: str, key: str, *, now: datetime | None = None) -> None:
+    """Count one hit for `key`."""
+    session.execute(rate_limit_hits.insert().values(
+        id=uuid4(), bucket=bucket, key_hash=_key_hash(bucket, key),
+        created_at=now or datetime.now(timezone.utc)))
+
+
+def allow(session: Session, bucket: str, key: str, *, limit: int, window: timedelta,
+          now: datetime | None = None) -> bool:
+    """Count one hit for `key` and say whether it's within `limit` hits per `window`.
+    A refused hit isn't counted, so someone who keeps trying is let back in once their
+    earlier hits age out, not kept out for good."""
+    if over_limit(session, bucket, key, limit=limit, window=window, now=now):
         return False
-    session.execute(rate_limit_hits.insert().values(id=uuid4(), bucket=bucket, key_hash=key_hash,
-                                                    created_at=now))
+    hit(session, bucket, key, now=now)
     return True

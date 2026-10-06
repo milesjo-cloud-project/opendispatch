@@ -45,6 +45,17 @@ def test_refused_hits_dont_extend_the_wait(session):
     assert allow(session, now=NOW + HOUR) is True
 
 
+def test_checking_doesnt_count_only_hits_do(session):
+    """Login checks on every attempt but counts only failures."""
+    over = lambda: rate_limit.over_limit(session, "test", "203.0.113.7", limit=2, window=HOUR, now=NOW)  # noqa: E731
+    assert [over() for _ in range(5)] == [False] * 5
+    rate_limit.hit(session, "test", "203.0.113.7", now=NOW)
+    assert over() is False
+    rate_limit.hit(session, "test", "203.0.113.7", now=NOW)
+    assert over() is True
+    assert allow(session, limit=2) is False  # allow() shares the same count
+
+
 def test_old_rows_are_deleted_and_addresses_arent_stored(session):
     allow(session, now=NOW - 2 * HOUR)
     allow(session)

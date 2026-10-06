@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Online booking spam control: bookings one IP address can send per hour, across every
     # company's link. Raise it if many customers share one address (an office, a campus).
     booking_limit_per_hour: int = 5
+    # Password-guessing control, also per IP address across every account. Only WRONG
+    # passwords count, so a whole office signing in from one address never hits it.
+    login_failures_per_15_minutes: int = 10
+    # New companies, and password reset emails, one IP address can ask for per hour.
+    signup_limit_per_hour: int = 5
+    reset_limit_per_hour: int = 5
     # How many proxies sit in front of the API and add to X-Forwarded-For (a load balancer,
     # a dev server). 0 = clients connect directly. Too high lets a client pick its own address
     # (fewer limits); too low puts everyone behind the proxy in one shared limit.
