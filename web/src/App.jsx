@@ -1,6 +1,7 @@
 // The app shell: the saved login, loading the company's data, the top nav, and which page shows.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { post, request, saveToken, savedToken } from "./api.js";
+import AccountPage from "./auth/AccountPage.jsx";
 import Login from "./auth/Login.jsx";
 import ResetPassword from "./auth/ResetPassword.jsx";
 import BookingPage from "./booking/BookingPage.jsx";
@@ -202,6 +203,7 @@ export default function App() {
     ],
     Customers: ["Customers", `${customers.length} customer${customers.length === 1 ? "" : "s"}`],
     Team: ["Team", "Owners, dispatchers and technicians"],
+    Account: ["Your account", auth.user?.email],
   };
   const [title, subtitle] = headings[page];
 
@@ -231,6 +233,13 @@ export default function App() {
         </nav>
         <div className="top-actions">
           <span className="user-label">{auth.user?.email}</span>
+          <button
+            className="quiet small"
+            aria-current={page === "Account" ? "page" : undefined}
+            onClick={() => setPage("Account")}
+          >
+            Account
+          </button>
           <button className="quiet small" onClick={logout}>
             Sign out
           </button>
@@ -305,6 +314,7 @@ export default function App() {
         {page === "Team" && (
           <TeamPage token={token} isOwner={isOwner} meId={auth.user?.id} technicians={technicians} onChanged={load} />
         )}
+        {page === "Account" && <AccountPage token={token} />}
         <footer className="app-footer">
           <Gear />
           <span>OpenDispatch</span>

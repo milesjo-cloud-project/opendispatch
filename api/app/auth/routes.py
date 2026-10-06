@@ -18,6 +18,7 @@ from app.auth.schemas import (
     PasswordChangeIn,
     ResetConfirmIn,
     ResetRequestIn,
+    SignedOutOut,
     SignupIn,
     SignupStatusOut,
     TokenOut,
@@ -138,6 +139,15 @@ def logout(actor: Actor = Depends(current_actor), session: Session = Depends(get
     auth.logout(actor.auth_session)
     session.commit()
     return Response(status_code=204)
+
+
+@router.post("/auth/logout-others", response_model=SignedOutOut)
+def logout_other_devices(actor: Actor = Depends(current_actor), session: Session = Depends(get_session)):
+    """Sign out every other device signed in to your account, e.g. after losing a phone.
+    This device stays signed in."""
+    count = auth.logout_other_devices(session, user=actor.user, keep=actor.auth_session)
+    session.commit()
+    return SignedOutOut(signed_out=count)
 
 
 @router.get("/me", response_model=MeOut)

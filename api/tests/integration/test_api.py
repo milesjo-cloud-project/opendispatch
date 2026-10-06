@@ -104,6 +104,25 @@ def test_signup_login_me_logout(api):
     assert api.call("GET", "/me", again["token"]).status_code == 200  # other device still in
 
 
+def test_sign_out_other_devices_keeps_this_one(api):
+    token, user = api.signup()
+    phone = api.ok("POST", "/auth/login", json={"email": user["email"], "password": PASSWORD})["token"]
+    laptop = api.ok("POST", "/auth/login", json={"email": user["email"], "password": PASSWORD})["token"]
+    api.ok("POST", "/auth/logout", laptop, status=204)  # already signed out; not counted
+
+    assert api.ok("POST", "/auth/logout-others", token) == {"signed_out": 1}
+    assert api.call("GET", "/me", phone).status_code == 401
+    assert api.call("GET", "/me", token).status_code == 200
+    assert api.ok("POST", "/auth/logout-others", token) == {"signed_out": 0}
+    assert api.call("POST", "/auth/logout-others").status_code == 401
+
+
+def test_sign_out_other_devices_leaves_other_people_alone(api, shop):
+    api.ok("POST", "/auth/logout-others", shop["owner"])
+    assert api.call("GET", "/me", shop["dispatcher"]).status_code == 200
+    assert api.call("GET", "/me", shop["tech"]).status_code == 200
+
+
 def test_protected_routes_need_a_token(api):
     for path in ["/me", "/jobs", "/company", "/users"]:
         r = api.call("GET", path)

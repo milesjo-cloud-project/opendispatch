@@ -184,6 +184,13 @@ def logout(auth_session: AuthSession) -> None:
     auth_session.revoke()
 
 
+def logout_other_devices(session: Session, *, user: User, keep: AuthSession) -> int:
+    """Sign out every device but this one, e.g. after losing a phone. Returns how many."""
+    count = _revoke_other_sessions(session, user, keep)
+    session.flush()
+    return count
+
+
 def change_password(
     session: Session, hasher: PasswordHasherPort, *,
     user: User, current_password: str, new_password: str, keep: AuthSession,
@@ -209,13 +216,16 @@ def change_password(
     session.flush()
 
 
-def _revoke_other_sessions(session: Session, user: User, keep: AuthSession | None) -> None:
+def _revoke_other_sessions(session: Session, user: User, keep: AuthSession | None) -> int:
+    """Revoke the user's still-active sessions except `keep`. Returns how many."""
+    now = datetime.now(timezone.utc)
     stmt = (update(AuthSession)
-            .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None))
-            .values(revoked_at=datetime.now(timezone.utc)))
+            .where(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None),
+                   AuthSession.expires_at > now)
+            .values(revoked_at=now))
     if keep is not None:
         stmt = stmt.where(AuthSession.id != keep.id)
-    session.execute(stmt)
+    return session.execute(stmt).rowcount
 
 
 @dataclass
