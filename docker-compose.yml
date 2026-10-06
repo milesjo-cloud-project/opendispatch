@@ -17,6 +17,10 @@ services:
     env_file: .env
     environment:
       UPLOAD_DIR: /srv/uploads
+      # Browsers reach the API through the web service's dev proxy, which adds their
+      # address to X-Forwarded-For. Safe only while 8080 is bound to 127.0.0.1 below:
+      # anyone who can call the API directly could put any address in that header.
+      TRUSTED_PROXY_HOPS: "1"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
