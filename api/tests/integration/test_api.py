@@ -118,7 +118,16 @@ def test_wrong_password_and_unknown_email_look_the_same(api):
     assert wrong.json() == unknown.json() == {"detail": "Invalid email or password"}
 
 
-def test_account_locks_after_repeated_failures(api):
+@pytest.fixture
+def no_ip_limits(monkeypatch):
+    """For tests of the per-ACCOUNT rules: every test request comes from one address, so
+    the per-address limits (tested below) would otherwise step in first."""
+    from app.config import settings
+    for name in ["login_failures_per_15_minutes", "signup_limit_per_hour", "reset_limit_per_hour"]:
+        monkeypatch.setattr(settings, name, 1_000)
+
+
+def test_account_locks_after_repeated_failures(api, no_ip_limits):
     _, user = api.signup()
     for _ in range(MAX_FAILED_LOGINS):
         api.call("POST", "/auth/login", json={"email": user["email"], "password": "wrong password!"})
@@ -218,7 +227,7 @@ def test_using_one_reset_link_cancels_the_others(api):
     assert r.status_code == 400
 
 
-def test_reset_unlocks_a_locked_account(api):
+def test_reset_unlocks_a_locked_account(api, no_ip_limits):
     _, user = api.signup()
     for _ in range(MAX_FAILED_LOGINS):
         api.call("POST", "/auth/login", json={"email": user["email"], "password": "wrong password!"})
@@ -228,11 +237,82 @@ def test_reset_unlocks_a_locked_account(api):
     api.ok("POST", "/auth/login", json={"email": user["email"], "password": NEW_PASSWORD})
 
 
-def test_reset_requests_are_limited_per_hour(api):
+def test_reset_requests_are_limited_per_hour(api, no_ip_limits):
     _, user = api.signup()
     for _ in range(MAX_RESETS_PER_HOUR + 2):
         request_reset(api, user["email"])  # same answer every time
     assert len(api.email.sent) == MAX_RESETS_PER_HOUR
+
+
+# --- per-address limits on the routes that need no login
+
+def set_limit(monkeypatch, name, value):
+    from app.config import settings
+    monkeypatch.setattr(settings, name, value)
+
+
+def login(api, email, password):
+    return api.call("POST", "/auth/login", json={"email": email, "password": password})
+
+
+def test_wrong_passwords_are_limited_per_address_across_accounts(api, monkeypatch):
+    """Password spraying: one wrong guess on each of many accounts still runs out."""
+    set_limit(monkeypatch, "login_failures_per_15_minutes", 3)
+    _, a = api.signup()
+    _, b = api.signup()
+    assert [login(api, a["email"], "wrong password!").status_code for _ in range(2)] == [401, 401]
+    assert login(api, b["email"], "wrong password!").status_code == 401
+    r = login(api, b["email"], PASSWORD)  # refused before the password is even checked
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "900"
+    assert "15 minutes" in r.json()["detail"]
+
+
+def test_successful_sign_ins_dont_count(api, monkeypatch):
+    """A whole office signing in from one address never trips the limit."""
+    set_limit(monkeypatch, "login_failures_per_15_minutes", 2)
+    _, user = api.signup()
+    for _ in range(5):
+        assert login(api, user["email"], PASSWORD).status_code == 200
+    assert login(api, user["email"], "wrong password!").status_code == 401
+    assert login(api, f"ghost-{uuid4()}@example.com", PASSWORD).status_code == 401  # no such account counts too
+    assert login(api, user["email"], PASSWORD).status_code == 429
+
+
+def test_login_limit_uses_the_address_the_trusted_proxy_saw(api, monkeypatch):
+    set_limit(monkeypatch, "login_failures_per_15_minutes", 1)
+    set_limit(monkeypatch, "trusted_proxy_hops", 1)
+    _, user = api.signup()
+
+    def from_(ip, password):
+        return api.client.post("/auth/login", json={"email": user["email"], "password": password},
+                               headers={"X-Forwarded-For": ip}).status_code
+
+    assert from_("203.0.113.7", "wrong password!") == 401
+    assert from_("203.0.113.7", PASSWORD) == 429
+    assert from_("198.51.100.1", PASSWORD) == 200  # someone else behind the same proxy
+
+
+def test_signups_are_limited_per_address(api, monkeypatch):
+    set_limit(monkeypatch, "signup_limit_per_hour", 2)
+    _, user = api.signup()
+    dup = api.call("POST", "/auth/signup", json={"company_name": "X", "email": user["email"], "password": PASSWORD})
+    assert dup.status_code == 409  # refused signups count too
+    r = api.call("POST", "/auth/signup",
+                 json={"company_name": "X", "email": f"{uuid4()}@example.com", "password": PASSWORD})
+    assert r.status_code == 429
+    assert r.headers["retry-after"] == "3600"
+
+
+def test_reset_requests_are_limited_per_address(api, monkeypatch):
+    """Across different emails, so nobody can flood many inboxes from one address."""
+    set_limit(monkeypatch, "reset_limit_per_hour", 2)
+    users = [api.signup()[1] for _ in range(3)]
+    request_reset(api, users[0]["email"])
+    request_reset(api, f"ghost-{uuid4()}@example.com")  # unknown emails count the same
+    r = api.call("POST", "/auth/password-reset/request", json={"email": users[2]["email"]})
+    assert r.status_code == 429
+    assert len(api.email.sent) == 1
 
 
 def test_phone_on_my_account(api):

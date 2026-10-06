@@ -1,7 +1,12 @@
-"""Sign up, log in, log out, and the logged-in user's own account."""
-import logging
+"""Sign up, log in, log out, and the logged-in user's own account.
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
+The routes that need no login are limited per IP address (see config.py), so nobody can
+guess passwords across many accounts, mass-create companies, or flood inboxes with resets.
+"""
+import logging
+from datetime import timedelta
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth import service as auth
@@ -16,11 +21,31 @@ from app.auth.schemas import (
     TokenOut,
 )
 from app.config import settings
-from app.shared.deps import Actor, current_actor, get_email, get_hasher, get_session, technician_for
+from app.shared import rate_limit
+from app.shared.deps import Actor, client_ip, current_actor, get_email, get_hasher, get_session, technician_for
 from app.shared.ports import EmailPort, PasswordHasherPort
 
 router = APIRouter(tags=["auth"])
 log = logging.getLogger("opendispatch.auth")
+
+LOGIN_WINDOW = timedelta(minutes=15)
+HOUR = timedelta(hours=1)
+
+
+def _too_many(what: str, window: timedelta) -> HTTPException:
+    minutes = int(window.total_seconds() // 60)
+    return HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                         f"Too many {what} from your network. Please try again in {minutes} minutes.",
+                         headers={"Retry-After": str(int(window.total_seconds()))})
+
+
+def _limit(session: Session, request: Request, bucket: str, limit: int, what: str) -> None:
+    """Count this request against the caller's address, or answer 429. The hit stays
+    counted even if what follows is refused."""
+    allowed = rate_limit.allow(session, bucket, client_ip(request), limit=limit, window=HOUR)
+    session.commit()  # also keeps the cleanup of old hits when refused
+    if not allowed:
+        raise _too_many(what, HOUR)
 
 
 def me_out(user, technician) -> MeOut:
@@ -34,9 +59,10 @@ def token_out(result: auth.LoginResult, technician=None) -> TokenOut:
 
 
 @router.post("/auth/signup", response_model=TokenOut, status_code=201)
-def signup(body: SignupIn, session: Session = Depends(get_session),
+def signup(body: SignupIn, request: Request, session: Session = Depends(get_session),
            hasher: PasswordHasherPort = Depends(get_hasher)):
     """Create a company and its owner account, and log in."""
+    _limit(session, request, "signup", settings.signup_limit_per_hour, "sign-ups")
     result = auth.signup(session, hasher, company_name=body.company_name, email=body.email,
                          password=body.password, phone=body.phone)
     session.commit()
@@ -44,12 +70,19 @@ def signup(body: SignupIn, session: Session = Depends(get_session),
 
 
 @router.post("/auth/login", response_model=TokenOut)
-def login(body: LoginIn, session: Session = Depends(get_session),
+def login(body: LoginIn, request: Request, session: Session = Depends(get_session),
           hasher: PasswordHasherPort = Depends(get_hasher)):
+    ip = client_ip(request)
+    # Checked before the password, so a blocked address learns nothing more
+    if rate_limit.over_limit(session, "login", ip, limit=settings.login_failures_per_15_minutes,
+                             window=LOGIN_WINDOW):
+        session.commit()
+        raise _too_many("failed sign-ins", LOGIN_WINDOW)
     try:
         result = auth.login(session, hasher, email=body.email, password=body.password)
     except auth.InvalidCredentials:
-        session.commit()  # keep the failed-attempt count
+        rate_limit.hit(session, "login", ip)
+        session.commit()  # keep the failed-attempt counts
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password") from None
     session.commit()
     return token_out(result, technician_for(session, result.user))
@@ -64,17 +97,18 @@ def _send_quietly(email: EmailPort, to: str, subject: str, body: str) -> None:
 
 
 @router.post("/auth/password-reset/request", status_code=202)
-def request_password_reset(body: ResetRequestIn, background: BackgroundTasks,
+def request_password_reset(body: ResetRequestIn, request: Request, background: BackgroundTasks,
                            session: Session = Depends(get_session),
                            email: EmailPort = Depends(get_email)):
     """Email a one-hour reset link. Answers the same whether or not the account exists."""
-    request = auth.request_password_reset(session, email=body.email)
+    _limit(session, request, "reset", settings.reset_limit_per_hour, "password reset requests")
+    reset = auth.request_password_reset(session, email=body.email)
     session.commit()
-    if request is not None:
+    if reset is not None:
         # After '#', so the token never reaches a server log or a Referer header
-        link = f"{settings.app_base_url.rstrip('/')}/reset-password#token={request.token}"
+        link = f"{settings.app_base_url.rstrip('/')}/reset-password#token={reset.token}"
         subject, text = auth.reset_email(link)
-        background.add_task(_send_quietly, email, request.user.email, subject, text)
+        background.add_task(_send_quietly, email, reset.user.email, subject, text)
     return {"detail": "If that email has an account, a reset link is on its way."}
 
 
