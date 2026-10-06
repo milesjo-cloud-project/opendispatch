@@ -13,8 +13,13 @@ from app.shared.errors import DomainRuleViolation
 MIN_PASSWORD_LENGTH = 12
 MAX_PASSWORD_LENGTH = 128  # hashing very long inputs is a cheap way to burn server CPU
 
+# Wrong passwords from ONE address in LOCKOUT lock the account from that address only, so a
+# stranger who knows someone's email can't lock them out of their own sign-in.
 MAX_FAILED_LOGINS = 10
 LOCKOUT = timedelta(minutes=15)
+# Wrong passwords in a row from ANY address before the whole account locks for LOCKOUT:
+# the backstop against guessing from many addresses at once.
+ACCOUNT_LOCK_AFTER = 100
 
 SESSION_LIFETIME = timedelta(days=14)
 

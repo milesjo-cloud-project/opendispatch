@@ -6,17 +6,21 @@ import hashlib
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.domain import (
+    LOCKOUT,
+    MAX_FAILED_LOGINS,
     MAX_RESETS_PER_HOUR,
     AuthSession,
     PasswordResetToken,
     check_password_policy,
 )
+from app.db.tables import login_failures
 from app.shared.errors import DomainRuleViolation
 from app.shared.models import Company, Technician, User, UserRole
 from app.shared.ports import PasswordHasherPort
@@ -142,26 +146,63 @@ def create_user(
     return user
 
 
+def _address_hash(address: str) -> str:
+    return hashlib.sha256(address.encode()).hexdigest()
+
+
+def _is_locked(session: Session, user: User, address: str, now: datetime) -> bool:
+    """Locked from this address (MAX_FAILED_LOGINS from it), or everywhere (the backstop)."""
+    if user.is_locked(now):
+        return True
+    recent = session.scalar(
+        select(func.count()).select_from(login_failures)
+        .where(login_failures.c.user_id == user.id,
+               login_failures.c.address_hash == _address_hash(address),
+               login_failures.c.created_at > now - LOCKOUT)
+    )
+    return recent >= MAX_FAILED_LOGINS
+
+
+def _record_failure(session: Session, user: User, address: str, now: datetime) -> None:
+    user.record_failed_login(now)
+    # Older rows can't lock anything any more
+    session.execute(delete(login_failures).where(login_failures.c.user_id == user.id,
+                                                 login_failures.c.created_at <= now - LOCKOUT))
+    session.execute(login_failures.insert().values(
+        id=uuid4(), company_id=user.company_id, user_id=user.id,
+        address_hash=_address_hash(address), created_at=now))
+    session.flush()
+
+
+def _clear_failures(session: Session, user: User, address: str | None = None) -> None:
+    """Forget wrong passwords from `address`, or from everywhere when None."""
+    user.record_successful_login()
+    stmt = delete(login_failures).where(login_failures.c.user_id == user.id)
+    if address is not None:
+        stmt = stmt.where(login_failures.c.address_hash == _address_hash(address))
+    session.execute(stmt)
+
+
 def login(
     session: Session, hasher: PasswordHasherPort, *,
-    email: str, password: str, now: datetime | None = None,
+    email: str, password: str, address: str, now: datetime | None = None,
 ) -> LoginResult:
-    """Raises InvalidCredentials on any failure. The caller must COMMIT even then,
-    so the failed-attempt count is saved."""
+    """`address` is the caller's IP address. Raises InvalidCredentials on any failure.
+    The caller must COMMIT even then, so the failed attempt is saved."""
     now = now or datetime.now(timezone.utc)
     user = _find_by_email(session, email, lock=True)
     if user is None or user.password_hash is None:
         _burn_time(hasher, password)
         raise InvalidCredentials()
-    if user.is_locked(now) or user.is_disabled:
+    if user.is_disabled or _is_locked(session, user, address, now):
         _burn_time(hasher, password)
         raise InvalidCredentials()
     if not hasher.verify(user.password_hash, password):
-        user.record_failed_login(now)
-        session.flush()
+        _record_failure(session, user, address, now)
         raise InvalidCredentials()
 
-    user.record_successful_login()
+    # Only this address: a stranger's wrong guesses elsewhere stay counted against them
+    _clear_failures(session, user, address)
     if hasher.needs_rehash(user.password_hash):
         user.password_hash = hasher.hash(password)
     return _start_session(session, user)
@@ -193,23 +234,24 @@ def logout_other_devices(session: Session, *, user: User, keep: AuthSession) -> 
 
 def change_password(
     session: Session, hasher: PasswordHasherPort, *,
-    user: User, current_password: str, new_password: str, keep: AuthSession,
+    user: User, current_password: str, new_password: str, keep: AuthSession, address: str,
     now: datetime | None = None,
 ) -> None:
     """Also logs out every other device, in case the old password was the problem.
 
-    A wrong current password counts toward the same lockout as a wrong login, so a stolen
-    login token can't be used to guess the real password. Raises InvalidCredentials (the
-    caller must COMMIT even then, so the count is saved), or AccountLocked while locked.
+    A wrong current password counts toward the same lockout as a wrong login, from the
+    caller's `address`, so a stolen login token can't be used to guess the real password.
+    Raises InvalidCredentials (the caller must COMMIT even then, so the count is saved),
+    or AccountLocked while locked.
     """
     now = now or datetime.now(timezone.utc)
-    if user.is_locked(now):
+    session.refresh(user, with_for_update=True)  # one guess at a time, like login
+    if _is_locked(session, user, address, now):
         raise AccountLocked()
     if user.password_hash is None or not hasher.verify(user.password_hash, current_password):
-        user.record_failed_login(now)
-        session.flush()
+        _record_failure(session, user, address, now)
         raise InvalidCredentials()
-    user.record_successful_login()
+    _clear_failures(session, user, address)
     check_password_policy(new_password)
     user.password_hash = hasher.hash(new_password)
     _revoke_other_sessions(session, user, keep)
@@ -287,7 +329,7 @@ def confirm_password_reset(
     now = datetime.now(timezone.utc)
     reset.use(now)
     user.password_hash = hasher.hash(new_password)
-    user.record_successful_login()  # clears any lockout
+    _clear_failures(session, user)  # unlocks it from every address
     # Any other links still in someone's inbox stop working too
     _cancel_reset_links(session, user, now)
     _revoke_other_sessions(session, user, keep=None)

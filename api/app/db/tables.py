@@ -366,6 +366,20 @@ password_reset_tokens = Table(
     _same_company_fk("fk_password_reset_tokens_user_same_company", "user_id", "users"),
 )
 
+# Recent wrong passwords per account AND address (auth/service.py), so one address can be
+# locked out of an account without locking out its owner. Rows older than LOCKOUT are dropped.
+login_failures = Table(
+    "login_failures",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False),
+    Column("user_id", _uuid(), nullable=False),
+    Column("address_hash", String(64), nullable=False),  # SHA-256; the address itself isn't kept
+    _created_at(),
+    _same_company_fk("fk_login_failures_user_same_company", "user_id", "users"),
+    Index("ix_login_failures_user_address_created", "user_id", "address_hash", "created_at"),
+)
+
 _mapped = False
 
 

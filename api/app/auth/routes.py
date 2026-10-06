@@ -89,7 +89,7 @@ def login(body: LoginIn, request: Request, session: Session = Depends(get_sessio
         session.commit()
         raise _too_many("failed sign-ins", LOGIN_WINDOW)
     try:
-        result = auth.login(session, hasher, email=body.email, password=body.password)
+        result = auth.login(session, hasher, email=body.email, password=body.password, address=ip)
     except auth.InvalidCredentials:
         rate_limit.hit(session, "login", ip)
         session.commit()  # keep the failed-attempt counts
@@ -165,14 +165,15 @@ def update_me(body: MeUpdate, actor: Actor = Depends(current_actor),
 
 
 @router.post("/me/password", status_code=204)
-def change_password(body: PasswordChangeIn, actor: Actor = Depends(current_actor),
+def change_password(body: PasswordChangeIn, request: Request, actor: Actor = Depends(current_actor),
                     session: Session = Depends(get_session),
                     hasher: PasswordHasherPort = Depends(get_hasher)):
     """Change your password. Logs out your other devices. Wrong current passwords count
-    toward the account's lockout, like wrong logins."""
+    toward the account's lockout from this address, like wrong logins."""
     try:
         auth.change_password(session, hasher, user=actor.user, current_password=body.current_password,
-                             new_password=body.new_password, keep=actor.auth_session)
+                             new_password=body.new_password, keep=actor.auth_session,
+                             address=client_ip(request))
     except auth.AccountLocked:
         minutes = int(LOCKOUT.total_seconds() // 60)
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,

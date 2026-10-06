@@ -157,6 +157,50 @@ def test_account_locks_after_repeated_failures(api, no_ip_limits):
     assert r.status_code == 401
 
 
+def login_from(api, address, email, password):
+    """Sign in as if from `address` (needs trusted_proxy_hops=1)."""
+    return api.client.post("/auth/login", json={"email": email, "password": password},
+                           headers={"X-Forwarded-For": address}).status_code
+
+
+STRANGER, OWNER_OFFICE = "203.0.113.7", "198.51.100.1"
+
+
+def test_a_stranger_locks_out_only_their_own_address(api, no_ip_limits, monkeypatch):
+    set_limit(monkeypatch, "trusted_proxy_hops", 1)
+    _, user = api.signup()
+    for _ in range(MAX_FAILED_LOGINS):
+        assert login_from(api, STRANGER, user["email"], "wrong password!") == 401
+    assert login_from(api, STRANGER, user["email"], PASSWORD) == 401  # even the right one, from there
+    assert login_from(api, OWNER_OFFICE, user["email"], PASSWORD) == 200  # the owner gets in
+    # ...and that doesn't clear the stranger's count
+    assert login_from(api, STRANGER, user["email"], PASSWORD) == 401
+
+
+def test_many_addresses_still_lock_the_whole_account(api, no_ip_limits, monkeypatch):
+    """The backstop: guessing spread over many addresses still runs out."""
+    import app.shared.models as models
+    monkeypatch.setattr(models, "ACCOUNT_LOCK_AFTER", MAX_FAILED_LOGINS + 5)
+    set_limit(monkeypatch, "trusted_proxy_hops", 1)
+    _, user = api.signup()
+    for i in range(MAX_FAILED_LOGINS + 5):
+        login_from(api, f"203.0.113.{i}", user["email"], "wrong password!")
+    assert login_from(api, OWNER_OFFICE, user["email"], PASSWORD) == 401
+
+
+def test_wrong_current_passwords_lock_only_that_address(api, monkeypatch):
+    """Someone with a stolen login token can't lock the owner out of signing in."""
+    set_limit(monkeypatch, "trusted_proxy_hops", 1)
+    token, user = api.signup()
+    for _ in range(MAX_FAILED_LOGINS):
+        r = api.client.post("/me/password",
+                            headers={"Authorization": f"Bearer {token}", "X-Forwarded-For": STRANGER},
+                            json={"current_password": "a wrong guess!!", "new_password": NEW_PASSWORD})
+        assert r.status_code == 403
+    assert login_from(api, STRANGER, user["email"], PASSWORD) == 401
+    assert login_from(api, OWNER_OFFICE, user["email"], PASSWORD) == 200
+
+
 def change_password(api, token, current, new="a brand new password"):
     return api.call("POST", "/me/password", token, json={"current_password": current, "new_password": new})
 
