@@ -18,7 +18,7 @@ from app.company.schemas import (
     UserCreate,
 )
 from app.shared.access import is_owner
-from app.shared.deps import Actor, current_actor, get_hasher, get_session, office_actor, owner_actor
+from app.shared.deps import Actor, get_hasher, get_session, office_actor, owner_actor
 from app.shared.errors import DomainRuleViolation
 from app.shared.models import Company, Customer, Technician, User
 from app.shared.ports import PasswordHasherPort
@@ -38,7 +38,8 @@ def _in_company(session: Session, cls, id_: UUID, actor: Actor):
 # --- company
 
 @router.get("/company", response_model=CompanyOut, tags=["company"])
-def get_company(actor: Actor = Depends(current_actor), session: Session = Depends(get_session)):
+def get_company(actor: Actor = Depends(office_actor), session: Session = Depends(get_session)):
+    """Owners and dispatchers. Techs don't need the approval limit or SMS setting."""
     return session.get(Company, actor.user.company_id)
 
 
