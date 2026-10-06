@@ -10,6 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy.orm import Session
 
 from app.auth import service as auth
+from app.auth.domain import LOCKOUT
 from app.auth.schemas import (
     LoginIn,
     MeOut,
@@ -157,11 +158,19 @@ def update_me(body: MeUpdate, actor: Actor = Depends(current_actor),
 def change_password(body: PasswordChangeIn, actor: Actor = Depends(current_actor),
                     session: Session = Depends(get_session),
                     hasher: PasswordHasherPort = Depends(get_hasher)):
-    """Change your password. Logs out your other devices."""
+    """Change your password. Logs out your other devices. Wrong current passwords count
+    toward the account's lockout, like wrong logins."""
     try:
         auth.change_password(session, hasher, user=actor.user, current_password=body.current_password,
                              new_password=body.new_password, keep=actor.auth_session)
+    except auth.AccountLocked:
+        minutes = int(LOCKOUT.total_seconds() // 60)
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            f"Too many wrong passwords. Wait up to {minutes} minutes, or reset your "
+                            "password from the sign-in page.",
+                            headers={"Retry-After": str(int(LOCKOUT.total_seconds()))}) from None
     except auth.InvalidCredentials:
+        session.commit()  # keep the failed-attempt count
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Current password is wrong") from None
     session.commit()
     return Response(status_code=204)
