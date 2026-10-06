@@ -65,7 +65,9 @@ class Api:
 
 
 @pytest.fixture
-def api(tx_session):
+def api(tx_session, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "signup", "open")  # most tests make several companies; see "who may sign up"
     yield Api(tx_session)
     app.dependency_overrides.clear()
 
@@ -242,6 +244,48 @@ def test_reset_requests_are_limited_per_hour(api, no_ip_limits):
     for _ in range(MAX_RESETS_PER_HOUR + 2):
         request_reset(api, user["email"])  # same answer every time
     assert len(api.email.sent) == MAX_RESETS_PER_HOUR
+
+
+# --- who may sign up (settings.signup)
+
+SIGNUP_CLOSED = "This server isn't taking new sign-ups. Ask your company's owner to add you."
+
+
+def new_signup(api):
+    return api.call("POST", "/auth/signup",
+                    json={"company_name": "X", "email": f"{uuid4()}@example.com", "password": PASSWORD})
+
+
+def test_first_run_lets_only_the_first_company_sign_up(api, monkeypatch, tx_session):
+    from sqlalchemy import select
+
+    from app.config import settings
+    from app.shared.models import Company
+    if tx_session.scalar(select(Company.id).limit(1)) is not None:
+        pytest.skip("needs a test database with no companies in it")
+    monkeypatch.setattr(settings, "signup", "first-run")
+
+    assert api.ok("GET", "/auth/signup") == {"open": True}
+    owner, _ = api.signup()
+    assert api.ok("GET", "/auth/signup") == {"open": False}
+    r = new_signup(api)
+    assert r.status_code == 403
+    assert r.json()["detail"] == SIGNUP_CLOSED
+    # The owner still adds their people as usual
+    api.add_user(owner, "dispatcher")
+
+
+def test_closed_signup_takes_nobody(api, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "signup", "closed")
+    assert api.ok("GET", "/auth/signup") == {"open": False}
+    assert new_signup(api).status_code == 403
+
+
+def test_open_signup_takes_anyone(api):
+    api.signup()
+    assert api.ok("GET", "/auth/signup") == {"open": True}
+    assert new_signup(api).status_code == 201
 
 
 # --- per-address limits on the routes that need no login

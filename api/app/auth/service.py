@@ -30,6 +30,10 @@ class EmailTaken(Exception):
     pass
 
 
+class SignupClosed(Exception):
+    """This server isn't taking new companies (settings.signup)."""
+
+
 class InvalidResetToken(Exception):
     """Unknown, used, or expired. One error for all, like InvalidCredentials."""
 
@@ -85,11 +89,30 @@ def _add_user(session: Session, user: User) -> None:
         raise
 
 
+# Any fixed number; held for the rest of the transaction by a first-run signup.
+_FIRST_RUN_LOCK = 0x5167_6E75
+
+
+def signup_open(session: Session, mode: str) -> bool:
+    """Whether a new company may be created now. `mode` is settings.signup."""
+    if mode == "open":
+        return True
+    if mode == "first-run":
+        return session.scalar(select(Company.id).limit(1)) is None
+    return False
+
+
 def signup(
-    session: Session, hasher: PasswordHasherPort, *,
+    session: Session, hasher: PasswordHasherPort, *, mode: str,
     company_name: str, email: str, password: str, phone: str | None = None,
 ) -> LoginResult:
-    """Create a new company with its first owner, and log them in."""
+    """Create a new company with its first owner, and log them in. Raises SignupClosed
+    if `mode` (settings.signup) doesn't allow one now."""
+    if mode == "first-run":
+        # Two people signing up in the same moment can't both be first
+        session.execute(select(func.pg_advisory_xact_lock(_FIRST_RUN_LOCK)))
+    if not signup_open(session, mode):
+        raise SignupClosed()
     check_password_policy(password)
     if not company_name.strip():
         raise DomainRuleViolation("Company name can't be empty")

@@ -12,11 +12,14 @@ git switch main
 git pull
 ```
 
-In `.env`, raise the booking limit. Every booking from your machine counts against one
-address, and the default of 5 an hour runs out during rehearsals:
+In `.env`, open sign-up and raise the limits. Each seed run makes a new company, which a
+normal install allows only once. Every booking and sign-up from your machine counts against
+one address, and the defaults of 5 an hour run out during rehearsals:
 
 ```
+SIGNUP=open
 BOOKING_LIMIT_PER_HOUR=50
+SIGNUP_LIMIT_PER_HOUR=50
 ```
 
 Start the app and bring the database up to date:
@@ -127,6 +130,7 @@ Point out:
 | What you see | What to do |
 |---|---|
 | "Too many booking requests" on the booking page | The booking limit is still 5. Set `BOOKING_LIMIT_PER_HOUR=50` in `.env`, then `docker compose up -d`. |
+| The seed says "This server isn't taking new sign-ups" | Set `SIGNUP=open` in `.env`, then `docker compose up -d`. |
 | The seed says "Too many sign-ups" | Each seed run signs up a company, and one address gets 5 an hour. Set `SIGNUP_LIMIT_PER_HOUR=50` in `.env`, then `docker compose up -d`. |
 | "Online booking isn't available" | The link was replaced or turned off. Use the link the seed printed, or copy the current one from the Requests tab. |
 | Can't sign in | Check the tag in the email matches the last seed run, and the password is `demo-password-2026`. |
