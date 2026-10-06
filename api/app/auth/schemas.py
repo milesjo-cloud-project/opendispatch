@@ -43,6 +43,10 @@ class TokenOut(BaseModel):
     user: MeOut
 
 
+class SignedOutOut(BaseModel):
+    signed_out: int  # how many other devices were signed out
+
+
 class MeUpdate(BaseModel):
     phone: str | None = Field(max_length=32)
 

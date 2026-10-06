@@ -1,4 +1,4 @@
-/* Sign-in, sign-up and password reset cards. */
+/* Sign-in, sign-up and password reset cards, and the Account page. */
 .login-wrap {
   min-height: 100vh;
   display: grid;
@@ -53,4 +53,17 @@
   justify-content: center;
   flex-wrap: wrap;
   gap: 6px 18px;
+}
+
+.account-page .inline-form:last-child {
+  border-bottom: 0;
+}
+.account-page h3 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.05rem;
+}
+.account-page .muted {
+  margin: 4px 0 14px;
+  font-size: 0.86rem;
 }

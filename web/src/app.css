@@ -33,9 +33,18 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  min-width: 0;
   margin-left: auto;
 }
+.top-actions button {
+  white-space: nowrap;
+}
+/* A long email gives way ("…") before the buttons do */
 .user-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   font-size: 0.86rem;
 }
