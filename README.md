@@ -114,7 +114,9 @@ Open http://localhost:8080/docs, call `POST /auth/signup` with a company name, e
 and every other endpoint works as that owner. `POST /auth/login` gets a new token later.
 
 - Tokens last 14 days. `POST /auth/logout` ends one; changing your password ends all the others.
-- 10 wrong passwords in a row lock the account for 15 minutes.
+- 10 wrong passwords from one address lock the account for 15 minutes *from that address*; the
+  owner can still sign in from anywhere else. 100 wrong in a row from anywhere lock it everywhere.
+  A password reset unlocks it.
 - Owners add people with `POST /users` (with a starting password). Include
   `"technician": {"display_name": ..., "hourly_rate_cents": ...}` to make them a technician in the
   same request, or do it later with `POST /technicians`.

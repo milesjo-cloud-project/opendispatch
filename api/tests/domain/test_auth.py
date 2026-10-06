@@ -5,8 +5,8 @@ from uuid import uuid4
 import pytest
 
 from app.auth.domain import (
+    ACCOUNT_LOCK_AFTER,
     LOCKOUT,
-    MAX_FAILED_LOGINS,
     SESSION_LIFETIME,
     AuthSession,
     check_password_policy,
@@ -62,7 +62,7 @@ def test_user_phone_is_normalized_and_clearable():
 
 def test_lockout_after_max_failures():
     user = _user()
-    for _ in range(MAX_FAILED_LOGINS - 1):
+    for _ in range(ACCOUNT_LOCK_AFTER - 1):
         user.record_failed_login(NOW)
     assert not user.is_locked(NOW)
 
@@ -74,7 +74,7 @@ def test_lockout_after_max_failures():
 
 def test_success_resets_failures():
     user = _user()
-    for _ in range(MAX_FAILED_LOGINS - 1):
+    for _ in range(ACCOUNT_LOCK_AFTER - 1):
         user.record_failed_login(NOW)
     user.record_successful_login()
     user.record_failed_login(NOW)

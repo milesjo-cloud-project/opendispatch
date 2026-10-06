@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from uuid import UUID, uuid4
 
-from app.auth.domain import LOCKOUT, MAX_FAILED_LOGINS, normalize_phone
+from app.auth.domain import ACCOUNT_LOCK_AFTER, LOCKOUT, normalize_phone
 
 from .errors import DomainRuleViolation, IllegalTransition
 from .job_status import TERMINAL, JobStatus, can_transition
@@ -94,9 +94,10 @@ class User:
         return self.locked_until is not None and now < self.locked_until
 
     def record_failed_login(self, now: datetime) -> None:
-        """After MAX_FAILED_LOGINS wrong passwords in a row, lock the account for LOCKOUT."""
+        """After ACCOUNT_LOCK_AFTER wrong passwords in a row, from any address, lock the whole
+        account for LOCKOUT. The tighter per-address lock lives in auth/service.py."""
         self.failed_logins += 1
-        if self.failed_logins >= MAX_FAILED_LOGINS:
+        if self.failed_logins >= ACCOUNT_LOCK_AFTER:
             self.locked_until = now + LOCKOUT
             self.failed_logins = 0
 
