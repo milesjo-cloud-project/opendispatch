@@ -9,6 +9,7 @@ from app.jobs import routes as job_routes
 from app.jobs import tracking as tracking_routes
 from app.shared import http_errors
 from app.shared.ports import DatabaseHealthPort
+from app.waitlist import routes as waitlist_routes
 
 # Interactive docs only locally; in dev/prod they'd advertise every endpoint to anyone.
 app = FastAPI(
@@ -23,6 +24,7 @@ app.include_router(company_routes.router)
 app.include_router(job_routes.router)
 app.include_router(tracking_routes.router)
 app.include_router(booking_routes.router)
+app.include_router(waitlist_routes.router)
 
 
 def get_db_health() -> DatabaseHealthPort:

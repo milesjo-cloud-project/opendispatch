@@ -9,13 +9,15 @@ import pytest
 from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 
+from app.adapters.calendar import FakeCalendar
 from app.adapters.email import FakeEmail
 from app.adapters.notifications import FakeNotifier, SmsNotifier
 from app.adapters.passwords import Argon2Hasher
 from app.adapters.sms import FakeSms
 from app.auth.domain import MAX_FAILED_LOGINS, MAX_RESETS_PER_HOUR
+from app.calendar.service import sync_pending
 from app.main import app
-from app.shared.deps import get_alert_sender, get_email, get_hasher, get_session
+from app.shared.deps import get_alert_sender, get_calendar_syncer, get_email, get_hasher, get_session
 from app.spend.service import send_pending_alerts
 
 pytestmark = pytest.mark.integration
@@ -34,11 +36,16 @@ class Api:
         self.sms = FakeSms()
         self.fallback = FakeNotifier()
         self.email = FakeEmail()
+        self.calendar = FakeCalendar()
         notifier = SmsNotifier(self.sms, self.fallback)
         app.dependency_overrides[get_session] = lambda: session
         app.dependency_overrides[get_hasher] = lambda: FAST_HASHER
         app.dependency_overrides[get_email] = lambda: self.email
         app.dependency_overrides[get_alert_sender] = lambda: (lambda: send_pending_alerts(session, notifier))
+        # Without this the background sync would open its own session and really commit,
+        # outside the transaction this test rolls back.
+        app.dependency_overrides[get_calendar_syncer] = lambda: (
+            lambda: sync_pending(session, self.calendar))
 
     def call(self, method, path, token=None, **kw):
         headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -658,6 +665,199 @@ def test_no_tracking_link_for_a_cancelled_job_but_an_old_one_shows_it(api, shop)
     api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "cancelled"})
     assert api.call("POST", f"/jobs/{job_id}/tracking-link", shop["owner"]).status_code == 409
     assert api.ok("GET", f"/public/tracking/{token}")["status"] == "cancelled"
+
+
+def test_a_nul_byte_is_a_400_not_a_500(api, shop):
+    """Postgres refuses NUL in any text column, so anything putting caller text into a
+    query used to answer 500 from a public, unauthenticated endpoint."""
+    # Percent-encoded, which is how a real client sends it; the server decodes it back.
+    assert api.call("GET", "/public/book/%00").status_code == 400
+    assert api.call("POST", "/auth/login",
+                    json={"email": "a\x00b@x.com", "password": "x" * 14}).status_code == 400
+    assert api.call("POST", "/customers", shop["owner"],
+                    json={"name": "Pat\x00Jones"}).status_code == 400
+
+
+def test_technician_job_link_opens_the_job_with_no_login(api, shop):
+    job_id = shop["job"]["id"]
+    link = api.ok("POST", f"/jobs/{job_id}/job-link", shop["dispatcher"], status=201)
+    token = link["path"].removeprefix("/j/")
+
+    opened = api.ok("GET", f"/public/job-link/{token}")
+    assert (opened["title"], opened["technician_name"]) == ("Water heater", "Sam")
+    assert opened["customer_name"] == "Jane Doe"
+    assert opened["scheduled_start"] is not None
+    # The job is quoted at $1,000; an unauthenticated link must not say so
+    assert "quoted_amount_cents" not in opened
+
+    assert api.call("GET", "/public/job-link/not-a-real-token").status_code == 404
+
+
+def test_only_the_office_hands_out_job_links(api, shop):
+    job_id = shop["job"]["id"]
+    assert api.call("POST", f"/jobs/{job_id}/job-link", shop["tech"]).status_code == 403
+    assert api.call("POST", f"/jobs/{job_id}/job-link").status_code == 401
+
+
+def test_a_job_with_nobody_assigned_has_no_link_to_give_out(api, shop):
+    job = api.ok("POST", "/jobs", shop["dispatcher"], status=201,
+                 json={"customer_id": shop["customer"]["id"], "title": "Unassigned"})
+    assert api.call("POST", f"/jobs/{job['id']}/job-link", shop["dispatcher"]).status_code == 409
+
+
+def test_reassigning_a_job_kills_the_old_technicians_link(api, shop):
+    """A signed link can't be revoked one at a time, so this is what bounds a leak."""
+    job_id = shop["job"]["id"]
+    token = api.ok("POST", f"/jobs/{job_id}/job-link", shop["owner"],
+                   status=201)["path"].removeprefix("/j/")
+    assert api.call("GET", f"/public/job-link/{token}").status_code == 200
+
+    _, other_user = api.add_user(shop["owner"], "technician")
+    other = api.ok("POST", "/technicians", shop["owner"], status=201,
+                   json={"user_id": other_user["id"], "display_name": "Alex"})
+    api.ok("PATCH", f"/jobs/{job_id}", shop["dispatcher"], json={"technician_id": other["id"]})
+
+    assert api.call("GET", f"/public/job-link/{token}").status_code == 404
+
+
+def test_taking_a_technician_off_the_schedule_leaves_their_links_working(api, shop):
+    """They keep the jobs already assigned to them (see shared/access.py), so they keep
+    the links to them; deactivating only stops NEW jobs going their way."""
+    job_id = shop["job"]["id"]
+    token = api.ok("POST", f"/jobs/{job_id}/job-link", shop["owner"],
+                   status=201)["path"].removeprefix("/j/")
+    api.ok("PATCH", f"/technicians/{shop['tech_profile']['id']}", shop["owner"],
+           json={"active": False})
+    assert api.call("GET", f"/public/job-link/{token}").status_code == 200
+
+
+def test_disabling_the_account_kills_the_link(api, shop):
+    """A disabled account is cut off everywhere: no sign-in, no reset, and no job link."""
+    job_id = shop["job"]["id"]
+    token = api.ok("POST", f"/jobs/{job_id}/job-link", shop["owner"],
+                   status=201)["path"].removeprefix("/j/")
+    tech_user_id = api.ok("GET", "/users", shop["owner"])
+    tech_id = next(u["id"] for u in tech_user_id if u["role"] == "technician")
+
+    api.ok("POST", f"/users/{tech_id}/disable", shop["owner"])
+
+    assert api.call("GET", f"/public/job-link/{token}").status_code == 404
+
+
+def test_job_links_are_off_when_no_secret_is_set(api, shop, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "app_env", "dev")  # no built-in dev key outside local
+    job_id = shop["job"]["id"]
+    assert api.call("POST", f"/jobs/{job_id}/job-link", shop["owner"]).status_code == 503
+    assert api.call("GET", "/public/job-link/anything").status_code == 404
+
+
+# --- calendars
+
+def test_scheduling_a_job_puts_it_on_the_technicians_calendar(api, shop):
+    """The draft was already assigned and timed; putting it on the schedule is the commitment."""
+    job_id = shop["job"]["id"]
+    assert api.calendar.created == []
+
+    api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "scheduled"})
+
+    assert len(api.calendar.created) == 1
+    event = api.calendar.created[0]
+    assert "Water heater" in event.title and "Jane Doe" in event.title
+    assert "/j/" in event.description  # the technician's link rides along
+    assert "100000" not in event.description and "1,000" not in event.description
+
+
+def test_rescheduling_moves_the_event_and_cancelling_takes_it_down(api, shop):
+    job_id = shop["job"]["id"]
+    api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "scheduled"})
+    moved = "2026-10-02T14:00:00+00:00"
+
+    api.ok("PATCH", f"/jobs/{job_id}", shop["dispatcher"], json={"scheduled_start": moved})
+    assert len(api.calendar.events) == 1  # moved, not duplicated
+    assert len(api.calendar.created) == 1
+    assert list(api.calendar.events.values())[0].starts_at.isoformat() == "2026-10-02T14:00:00+00:00"
+
+    api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "cancelled"})
+    assert api.calendar.events == {}
+    assert len(api.calendar.cancelled) == 1
+
+
+def test_a_technician_moving_their_own_job_along_costs_no_calendar_calls(api, shop):
+    """En route and in progress change nothing a calendar shows."""
+    job_id = shop["job"]["id"]
+    api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "scheduled"})
+    api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "dispatched"})
+    before = len(api.calendar.created), len(api.calendar.cancelled)
+
+    api.ok("POST", f"/jobs/{job_id}/status", shop["tech"], json={"status": "en_route"})
+    api.ok("POST", f"/jobs/{job_id}/status", shop["tech"], json={"status": "in_progress"})
+
+    assert (len(api.calendar.created), len(api.calendar.cancelled)) == before
+
+
+def upcoming_job(api, shop, days=3):
+    """A scheduled job in the future, which is what the disable/enable resync covers."""
+    start = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    job = api.ok("POST", "/jobs", shop["dispatcher"], status=201,
+                 json={"customer_id": shop["customer"]["id"], "title": "Next week",
+                       "technician_id": shop["tech_profile"]["id"], "scheduled_start": start,
+                       "schedule": True})
+    return job
+
+
+def tech_user_id(api, shop):
+    return next(u["id"] for u in api.ok("GET", "/users", shop["owner"]) if u["role"] == "technician")
+
+
+def test_disabling_someone_takes_their_jobs_off_their_calendar(api, shop):
+    """They left, or the account was misused. The event holds the customer's address and
+    phone, so it shouldn't sit on their calendar waiting for a reassignment."""
+    upcoming_job(api, shop)
+    assert len(api.calendar.events) == 1
+
+    api.ok("POST", f"/users/{tech_user_id(api, shop)}/disable", shop["owner"])
+
+    assert api.calendar.events == {}
+    assert len(api.calendar.cancelled) == 1
+
+
+def test_enabling_someone_puts_their_upcoming_jobs_back(api, shop):
+    upcoming_job(api, shop)
+    user_id = tech_user_id(api, shop)
+    api.ok("POST", f"/users/{user_id}/disable", shop["owner"])
+
+    api.ok("POST", f"/users/{user_id}/enable", shop["owner"])
+
+    assert len(api.calendar.events) == 1
+    assert len(api.calendar.created) == 2  # the first one, then a fresh one
+
+
+def test_disabling_someone_leaves_jobs_they_already_finished_alone(api, shop):
+    """Recreating or tearing down months of past events would be a lot of calls for nothing."""
+    job_id = shop["job"]["id"]  # the fixture's job is in the past
+    api.ok("POST", f"/jobs/{job_id}/status", shop["owner"], json={"status": "scheduled"})
+    assert len(api.calendar.events) == 1
+
+    api.ok("POST", f"/users/{tech_user_id(api, shop)}/disable", shop["owner"])
+
+    assert api.calendar.cancelled == []
+
+
+def test_a_draft_job_never_reaches_a_calendar(api, shop):
+    """Open shifts aren't anybody's commitment yet."""
+    api.ok("POST", "/jobs", shop["dispatcher"], status=201,
+           json={"customer_id": shop["customer"]["id"], "title": "Maybe next week",
+                 "technician_id": shop["tech_profile"]["id"], "scheduled_start": START})
+    assert api.calendar.created == []
+
+
+def test_a_job_created_straight_onto_the_schedule_gets_an_event(api, shop):
+    api.ok("POST", "/jobs", shop["dispatcher"], status=201,
+           json={"customer_id": shop["customer"]["id"], "title": "Burst pipe",
+                 "technician_id": shop["tech_profile"]["id"], "scheduled_start": START,
+                 "schedule": True})
+    assert [e.title.split(" — ")[0] for e in api.calendar.created] == ["Burst pipe"]
 
 
 def test_job_attachments_accept_image_types_and_pdf(api, shop, tmp_path, monkeypatch):

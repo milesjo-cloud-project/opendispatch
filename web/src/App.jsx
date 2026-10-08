@@ -13,7 +13,9 @@ import JobEditor from "./jobs/JobEditor.jsx";
 import JobsPage from "./jobs/JobsPage.jsx";
 import NewJobDialog from "./jobs/NewJobDialog.jsx";
 import SchedulePage from "./jobs/SchedulePage.jsx";
+import TechnicianJob from "./jobs/TechnicianJob.jsx";
 import TeamPage from "./team/TeamPage.jsx";
+import WaitlistPage from "./waitlist/WaitlistPage.jsx";
 
 export default function App() {
   const [auth, setAuth] = useState(null);
@@ -162,8 +164,15 @@ export default function App() {
 
   const trackingToken = window.location.pathname.match(/^\/track\/([^/]+)\/?$/)?.[1];
   if (trackingToken) return <CustomerTracking token={trackingToken} />;
+  // A technician's signed link from their calendar event; checked before the login, since
+  // the whole point is that it opens without one.
+  const jobLinkToken = window.location.pathname.match(/^\/j\/([^/]+)\/?$/)?.[1];
+  if (jobLinkToken) return <TechnicianJob token={jobLinkToken} />;
   const bookingId = window.location.pathname.match(/^\/book\/([^/]+)\/?$/)?.[1];
   if (bookingId) return <BookingPage bookingId={bookingId} />;
+  // The launch waitlist. Before the login like the other public pages, and the API answers
+  // 404 unless WAITLIST=open, so a self-hosted copy shows "not open on this server".
+  if (/^\/waitlist\/?$/.test(window.location.pathname)) return <WaitlistPage />;
   if (resetToken !== null)
     return (
       <ResetPassword

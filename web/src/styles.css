@@ -8,8 +8,14 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --ink: #202c35;
-  --muted: #75818b;
+  /* Contrast is measured against the lightest AND darkest thing each colour sits on
+     (#fff cards, the #f2f5f7 page, #f5f8f8 panels). --muted carries secondary text, so
+     it needs 4.5:1 on all three; --line only outlines decorative panels, so it doesn't,
+     but --field-line outlines form controls, which do need 3:1 (WCAG 1.4.11). */
+  --muted: #67717a;
   --line: #e1e7ea;
+  --field-line: #767f85;
+  --focus: #0d6f73;
   --teal: #087e83;
   --teal-dark: #086b70;
   --teal-soft: #e6f5f3;
@@ -34,9 +40,13 @@ button {
 }
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
-  outline: 3px solid #57b9b4;
+select:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
+  /* Fills the 2px gap, so the dark ring is still visible around a teal button */
+  box-shadow: 0 0 0 2px #fff;
 }
 .brand {
   display: flex;
@@ -235,7 +245,7 @@ p {
   width: 100%;
   min-height: 42px;
   padding: 9px 11px;
-  border: 1px solid #d9e0e4;
+  border: 1px solid var(--field-line);
   border-radius: 7px;
   background: #fff;
   color: var(--ink);
@@ -319,7 +329,7 @@ textarea {
 .inline-form textarea {
   width: 100%;
   padding: 9px 11px;
-  border: 1px solid #d9e0e4;
+  border: 1px solid var(--field-line);
   border-radius: 7px;
   color: var(--ink);
   resize: vertical;
@@ -354,7 +364,7 @@ textarea {
   max-width: 420px;
   min-height: 40px;
   padding: 8px 11px;
-  border: 1px solid #d9e0e4;
+  border: 1px solid var(--field-line);
   border-radius: 8px;
 }
 .inline-form {
@@ -455,5 +465,19 @@ textarea {
   }
   .data-side {
     align-items: start;
+  }
+}
+
+/* Some people get motion sickness or migraines from movement, and the OS setting is how
+   they say so. Transitions and the loading spinner stop; nothing here conveys meaning
+   through movement, so nothing is lost. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

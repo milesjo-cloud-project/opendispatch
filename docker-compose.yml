@@ -33,6 +33,20 @@ services:
       db:
         condition: service_healthy
 
+  # Retries writes to outside services that failed: calendar events, and the launch
+  # waitlist's copy in Google Sheets. So an event isn't lost because Google was down when
+  # the dispatcher hit save. The API also drains the outboxes after each request that
+  # queues one; this is what covers the rest of the time. One replica is enough.
+  worker:
+    build: ./api
+    env_file: .env
+    volumes:
+      - ./api/app:/srv/app
+    command: python -m app.outbox.worker
+    depends_on:
+      db:
+        condition: service_healthy
+
   web:
     build:
       context: ./web

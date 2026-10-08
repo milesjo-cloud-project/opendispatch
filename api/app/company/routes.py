@@ -1,7 +1,8 @@
 """Company settings, people, and customers. Everything is scoped to the caller's company."""
+from collections.abc import Callable
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,7 +19,14 @@ from app.company.schemas import (
     UserCreate,
 )
 from app.shared.access import is_owner
-from app.shared.deps import Actor, get_hasher, get_session, office_actor, owner_actor
+from app.shared.deps import (
+    Actor,
+    get_calendar_syncer,
+    get_hasher,
+    get_session,
+    office_actor,
+    owner_actor,
+)
 from app.shared.errors import DomainRuleViolation
 from app.shared.models import Company, Customer, Technician, User
 from app.shared.ports import PasswordHasherPort
@@ -89,22 +97,30 @@ def create_user(body: UserCreate, actor: Actor = Depends(owner_actor),
 
 
 @router.post("/users/{user_id}/disable", response_model=UserOut, tags=["people"])
-def disable_user(user_id: UUID, actor: Actor = Depends(owner_actor), session: Session = Depends(get_session)):
+def disable_user(user_id: UUID, background: BackgroundTasks, actor: Actor = Depends(owner_actor),
+                 session: Session = Depends(get_session),
+                 sync_calendar: Callable[[], None] = Depends(get_calendar_syncer)):
     """Owner only. Sign someone out everywhere and stop them signing in, e.g. when they leave.
-    Their jobs and history stay. Not your own account."""
+    Their current and upcoming jobs come off their calendar; the jobs and history stay.
+    Not your own account."""
     user = _in_company(session, User, user_id, actor)
     auth.disable_user(session, by=actor.user, user=user)
     session.commit()
+    background.add_task(sync_calendar)
     return user
 
 
 @router.post("/users/{user_id}/enable", response_model=UserOut, tags=["people"])
-def enable_user(user_id: UUID, actor: Actor = Depends(owner_actor), session: Session = Depends(get_session)):
-    """Owner only. Let a disabled user sign in again. Put their technician profile back on
-    the schedule separately (PATCH /technicians/{id} with active: true)."""
+def enable_user(user_id: UUID, background: BackgroundTasks, actor: Actor = Depends(owner_actor),
+                session: Session = Depends(get_session),
+                sync_calendar: Callable[[], None] = Depends(get_calendar_syncer)):
+    """Owner only. Let a disabled user sign in again, and put their current and upcoming jobs
+    back on their calendar. Put their technician profile back on the schedule separately
+    (PATCH /technicians/{id} with active: true)."""
     user = _in_company(session, User, user_id, actor)
-    auth.enable_user(user)
+    auth.enable_user(session, user)
     session.commit()
+    background.add_task(sync_calendar)
     return user
 
 

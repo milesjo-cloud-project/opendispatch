@@ -20,6 +20,7 @@ from app.auth.domain import (
     PasswordResetToken,
     check_password_policy,
 )
+from app.calendar.service import resync_technician
 from app.db.tables import login_failures
 from app.shared.errors import DomainRuleViolation
 from app.shared.models import Company, Technician, User, UserRole
@@ -346,8 +347,9 @@ def _cancel_reset_links(session: Session, user: User, now: datetime) -> None:
 
 def disable_user(session: Session, *, by: User, user: User) -> None:
     """An owner cuts off someone in their company: signs them out everywhere, cancels their
-    reset links, and takes their technician profile off the schedule. Their jobs, expenses
-    and history stay. The caller has already checked `by` is an owner of user's company."""
+    reset links, takes their technician profile off the schedule, and takes their current
+    and upcoming jobs off their calendar. Their jobs, expenses and history stay.
+    The caller has already checked `by` is an owner of user's company."""
     if user.id == by.id:
         raise DomainRuleViolation("You can't disable your own account")
     # Lock the company's owners in a fixed order, so two owners disabling each other at
@@ -365,11 +367,18 @@ def disable_user(session: Session, *, by: User, user: User) -> None:
     _revoke_other_sessions(session, user, keep=None)
     _cancel_reset_links(session, user, now)
     session.execute(update(Technician).where(Technician.user_id == user.id).values(active=False))
+    # Their job links stop working at once (they are checked against the account), but an
+    # event already on their calendar would keep showing the customer's address and phone
+    # until someone reassigned the job. Queue those jobs so the sync takes them down.
+    resync_technician(session, user, now=now)
     session.flush()
 
 
-def enable_user(user: User) -> None:
-    """Let them sign in again with their old password. Their technician profile stays
-    inactive until the owner puts it back on the schedule."""
+def enable_user(session: Session, user: User) -> None:
+    """Let them sign in again with their old password, and put their current and upcoming
+    jobs back on their calendar. Their technician profile stays inactive until the owner
+    puts it back on the schedule."""
     user.enable()
     user.record_successful_login()  # a fresh start, not a lockout left over from before
+    resync_technician(session, user)
+    session.flush()

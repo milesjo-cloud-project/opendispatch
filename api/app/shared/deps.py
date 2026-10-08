@@ -8,18 +8,30 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.adapters.calendar import LogCalendar
 from app.adapters.email import LogEmail, SmtpEmail
+from app.adapters.google_calendar import GoogleCalendar, GoogleToken
+from app.adapters.google_sheets import GoogleSheets
 from app.adapters.notifications import LogNotifier, SmsNotifier
 from app.adapters.passwords import Argon2Hasher
+from app.adapters.sheets import LogSheet
 from app.adapters.sms import TwilioSms
 from app.auth import service as auth
 from app.auth.domain import AuthSession
+from app.calendar.service import sync_pending
 from app.config import settings
 from app.db.session import make_session_factory
 from app.shared.access import is_office, is_owner
 from app.shared.models import Technician, User
-from app.shared.ports import EmailPort, NotificationPort, PasswordHasherPort
+from app.shared.ports import (
+    CalendarPort,
+    EmailPort,
+    NotificationPort,
+    PasswordHasherPort,
+    SpreadsheetPort,
+)
 from app.spend.service import send_pending_alerts
+from app.waitlist.sync import sync_pending as sync_waitlist_pending
 
 
 @lru_cache
@@ -76,6 +88,26 @@ def get_email() -> EmailPort:
                      settings.email_from)
 
 
+@lru_cache
+def get_calendar() -> CalendarPort:
+    if not settings.google_calendar_configured:
+        return LogCalendar(show_details=settings.is_local)
+    token = GoogleToken(settings.google_client_id,
+                        settings.google_client_secret.get_secret_value(),
+                        settings.google_refresh_token.get_secret_value())
+    return GoogleCalendar(token, settings.google_calendar_id)
+
+
+@lru_cache
+def get_sheet() -> SpreadsheetPort:
+    if not settings.google_sheets_configured:
+        return LogSheet(show_details=settings.is_local)
+    token = GoogleToken(settings.google_client_id,
+                        settings.google_client_secret.get_secret_value(),
+                        settings.sheets_refresh_token)
+    return GoogleSheets(token, settings.google_sheets_id, settings.google_sheets_tab)
+
+
 def get_alert_sender(notifier: NotificationPort = Depends(get_notifier)) -> Callable[[], None]:
     """Runs after the response, in its own session, once the spend has committed."""
     def send() -> None:
@@ -83,6 +115,32 @@ def get_alert_sender(notifier: NotificationPort = Depends(get_notifier)) -> Call
             send_pending_alerts(session, notifier)
             session.commit()
     return send
+
+
+def get_calendar_syncer(calendar: CalendarPort = Depends(get_calendar)) -> Callable[[], None]:
+    """Runs after the response, in its own session, once the job edit has committed.
+
+    This is the usual path for a calendar write. app/outbox/worker.py is what retries
+    the ones that fail, so a failure here is logged and left for it.
+    """
+    def sync() -> None:
+        with session_factory()() as session:
+            sync_pending(session, calendar)
+            session.commit()
+    return sync
+
+
+def get_waitlist_syncer(sheet: SpreadsheetPort = Depends(get_sheet)) -> Callable[[], None]:
+    """Runs after the response, in its own session, once the signup has committed.
+
+    Signing up must not wait on Google, and must not fail because of it, so the row goes
+    out here and app/outbox/worker.py retries the ones that fail.
+    """
+    def sync() -> None:
+        with session_factory()() as session:
+            sync_waitlist_pending(session, sheet)
+            session.commit()
+    return sync
 
 
 @dataclass

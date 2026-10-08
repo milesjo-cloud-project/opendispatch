@@ -1,4 +1,5 @@
-"""Request and response bodies for jobs, their history, files and tracking links."""
+"""Request and response bodies for jobs, their history, files and the two kinds of
+private link: the customer's tracking link and the technician's signed job link."""
 from datetime import datetime
 from uuid import UUID
 
@@ -76,6 +77,25 @@ class CustomerTrackingOut(BaseModel):
     status: JobStatus
     scheduled_start: datetime | None
     last_updated: datetime | None
+
+
+class JobLinkOut(BaseModel):
+    path: str
+    expires_at: datetime
+
+
+class TechnicianJobOut(BaseModel):
+    """What a signed technician job link shows (jobs/links.py). No login, so no money
+    and nothing about any other job."""
+    title: str
+    description: str | None
+    status: JobStatus
+    scheduled_start: datetime | None
+    technician_name: str
+    customer_name: str | None
+    customer_phone: str | None
+    customer_address: str | None
+    expires_at: datetime
 
 
 class JobAttachmentOut(Out):
