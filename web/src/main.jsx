@@ -10,5 +10,6 @@ import "./jobs/schedule.css";
 import "./jobs/job-editor.css";
 import "./jobs/tracking.css";
 import "./booking/booking.css";
+import "./waitlist/waitlist.css";
 
 createRoot(document.getElementById("root")).render(<App />);

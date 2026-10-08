@@ -43,6 +43,7 @@ from app.shared.models import (
     UserRole,
 )
 from app.spend.budget import BudgetAlert, BudgetLevel
+from app.waitlist.domain import PlanInterest, WaitlistSignup
 
 # Stable constraint names, so migrations and downgrades don't break.
 metadata = MetaData(
@@ -231,6 +232,47 @@ job_tracking_links = Table(
     _same_company_fk("fk_job_tracking_links_job_same_company", "job_id", "jobs"),
 )
 
+# Calendar writes go through this outbox, so a provider that's slow or down delays an
+# event instead of failing the dispatcher's save, and nothing reaches a calendar for an
+# edit that rolled back.
+#
+# A row carries no payload: it only says "this job's calendar event no longer matches the
+# job". The event is rebuilt from the job when it's sent, so repeated edits collapse into
+# one write (at most one pending row per job) and a retry always sends current state
+# rather than a stale snapshot. Rows are kept after sending, as a record of what went out.
+calendar_outbox = Table(
+    "calendar_outbox",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False, index=True),
+    Column("job_id", _uuid(), nullable=False),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("next_attempt_at", DateTime(timezone=True), nullable=False),
+    Column("last_error", Text),
+    Column("sent_at", DateTime(timezone=True)),
+    _created_at(),
+    CheckConstraint("attempts >= 0", name="attempts_not_negative"),
+    _same_company_fk("fk_calendar_outbox_job_same_company", "job_id", "jobs"),
+)
+# One job can only be waiting once; a second edit updates the row it already has.
+Index("uq_calendar_outbox_pending_job", calendar_outbox.c.job_id, unique=True,
+      postgresql_where=calendar_outbox.c.sent_at.is_(None))
+Index("ix_calendar_outbox_due", calendar_outbox.c.next_attempt_at,
+      postgresql_where=calendar_outbox.c.sent_at.is_(None))
+
+# The event this job currently has at the provider. One per job, and deleted when the
+# event is cancelled: no row means there's nothing out there to update or take down.
+job_calendar_events = Table(
+    "job_calendar_events",
+    metadata,
+    Column("job_id", _uuid(), primary_key=True),
+    Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False, index=True),
+    Column("external_id", String(1024), nullable=False),  # Google allows up to 1024
+    _created_at(),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    _same_company_fk("fk_job_calendar_events_job_same_company", "job_id", "jobs"),
+)
+
 # What customers send through the public booking link. Nothing here points at a customer:
 # the office picks one when it accepts, and only then does a job (job_id) exist.
 booking_requests = Table(
@@ -257,6 +299,54 @@ booking_requests = Table(
     _same_company_fk("fk_booking_requests_job_same_company", "job_id", "jobs"),
     _same_company_fk("fk_booking_requests_decider_same_company", "decided_by_user_id", "users"),
 )
+
+# People waiting for the Winter 2027 launch. The one table with no company_id: a signup
+# belongs to whoever runs this server, not to a tenant, and the person signing up has no
+# company here yet (see waitlist/domain.py). So none of the _same_company_fk machinery
+# applies, and reading it is guarded by WAITLIST_ADMIN_TOKEN instead of by a user role.
+waitlist_signups = Table(
+    "waitlist_signups",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    # Handed out in order and never reused: the founding price is promised to the first
+    # FOUNDING_SPOTS spots, so a renumbering would break a promise.
+    Column("spot", Integer, nullable=False, unique=True),
+    Column("email", String(320), nullable=False),
+    Column("name", String(200)),
+    Column("company", String(200)),
+    Column("trade", String(100)),
+    Column("crew_size", String(40)),
+    Column("plan", _enum_type(PlanInterest, "waitlist_plan_interest"), nullable=False),
+    Column("current_tool", String(200)),
+    Column("region", String(200)),
+    _created_at(),
+    CheckConstraint("spot >= 1", name="spot_starts_at_one"),
+)
+# Case-insensitive, so one person can't take two spots (and two launch emails) by
+# capitalising their address differently.
+Index("uq_waitlist_signups_email_lower", func.lower(waitlist_signups.c.email), unique=True)
+
+# Queued copies of a signup into the launch spreadsheet (app/waitlist/sync.py). No
+# company_id, like the signups themselves. The row carries no cells: they are rebuilt from
+# the signup when the write goes out, so a retry sends the current row.
+waitlist_outbox = Table(
+    "waitlist_outbox",
+    metadata,
+    Column("id", _uuid(), primary_key=True),
+    Column("signup_id", _uuid(), ForeignKey("waitlist_signups.id", ondelete="CASCADE"),
+           nullable=False),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("next_attempt_at", DateTime(timezone=True), nullable=False),
+    Column("last_error", Text),
+    Column("sent_at", DateTime(timezone=True)),
+    _created_at(),
+    CheckConstraint("attempts >= 0", name="attempts_not_negative"),
+)
+# One signup can only be waiting once; queueing it again updates the row it already has.
+Index("uq_waitlist_outbox_pending_signup", waitlist_outbox.c.signup_id, unique=True,
+      postgresql_where=waitlist_outbox.c.sent_at.is_(None))
+Index("ix_waitlist_outbox_due", waitlist_outbox.c.next_attempt_at,
+      postgresql_where=waitlist_outbox.c.sent_at.is_(None))
 
 # One row per counted request, for per-IP limits on public routes. Deliberately NOT per
 # company: one spammer is one spammer across every company's link. key_hash is a SHA-256 so
@@ -397,6 +487,7 @@ def start_mappers() -> None:
         (JobEvent, job_events),
         (JobAttachment, job_attachments),
         (BookingRequest, booking_requests),
+        (WaitlistSignup, waitlist_signups),
         (Expense, expenses),
         (TimeEntry, time_entries),
         (BudgetAlert, budget_alerts),

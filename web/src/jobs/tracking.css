@@ -55,7 +55,7 @@
   border: 1px solid #d8e0e2;
   border-radius: 50%;
   background: #fff;
-  color: #9aa5aa;
+  color: #6b797f;
   font-size: 0.7rem;
 }
 .progress-step.done .progress-mark {
@@ -83,6 +83,52 @@
 }
 .refresh-note {
   margin: 20px 0 0;
-  color: #8a959b;
+  color: #67717a;
   font-size: 0.7rem;
+}
+
+/* The technician's /j/<token> page: the same card, but with the details they need on
+   site rather than a progress bar. */
+.job-link-card {
+  text-align: left;
+}
+.job-link-card h1,
+.job-link-card .eyebrow,
+.job-link-card .tracking-status {
+  text-align: left;
+  justify-self: start;
+}
+.job-link-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin: 18px 0 0;
+  font-size: 0.88rem;
+}
+.job-link-details dt {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  align-self: center;
+}
+.job-link-details dd {
+  margin: 0;
+  color: var(--ink);
+}
+.job-link-details a {
+  color: var(--teal-dark);
+  /* Tap targets on a phone, not 12px of link text */
+  display: inline-block;
+  padding: 2px 0;
+}
+.job-link-notes {
+  margin: 18px 0 0;
+  padding: 14px 15px;
+  border-radius: 9px;
+  background: #f5f8f8;
+  color: var(--ink);
+  font-size: 0.86rem;
+  white-space: pre-wrap;
 }

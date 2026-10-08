@@ -14,6 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.adapters.storage import FileSystemStorage
+from app.calendar.domain import wants_event
+from app.calendar.service import mark_dirty
 from app.config import settings
 from app.db.queries import visible_expenses, visible_job, visible_jobs
 from app.db.repositories import CustomerRepository, JobRepository
@@ -27,7 +29,15 @@ from app.jobs.schemas import (
     StatusChangeIn,
 )
 from app.shared.access import can_change_status, can_view_budget, is_office
-from app.shared.deps import Actor, current_actor, get_alert_sender, get_session, office_actor, owner_actor
+from app.shared.deps import (
+    Actor,
+    current_actor,
+    get_alert_sender,
+    get_calendar_syncer,
+    get_session,
+    office_actor,
+    owner_actor,
+)
 from app.shared.errors import DomainRuleViolation
 from app.shared.job_status import JobStatus
 from app.shared.models import Customer, Expense, Job, JobAttachment, JobEvent, Technician, TimeEntry
@@ -81,6 +91,16 @@ def _budget_out(b: JobBudget) -> BudgetOut:
                      spent_cents=b.spent_cents, remaining_cents=b.remaining_cents, level=b.level)
 
 
+def _calendar_state(job: Job) -> tuple:
+    """Everything a calendar event is made of. If this moves, the event has to be rewritten.
+
+    Deliberately `wants_event(job)` rather than the status itself: marking a job en route
+    or in progress changes nothing a calendar shows, so it costs no provider call, while
+    cancelling flips wants_event and takes the event down.
+    """
+    return (wants_event(job), job.technician_id, job.scheduled_start, job.title, job.description)
+
+
 def _check_refs(session: Session, company_id: UUID, customer_id=None, technician_id=None) -> None:
     """Friendly 422s for ids from another company (the database would refuse them anyway)."""
     if customer_id is not None:
@@ -108,8 +128,9 @@ def list_jobs(actor: Actor = Depends(current_actor), session: Session = Depends(
 
 
 @router.post("/jobs", response_model=JobOut, status_code=201)
-def create_job(body: JobCreate, actor: Actor = Depends(office_actor),
-               session: Session = Depends(get_session)):
+def create_job(body: JobCreate, background: BackgroundTasks, actor: Actor = Depends(office_actor),
+               session: Session = Depends(get_session),
+               sync_calendar: Callable[[], None] = Depends(get_calendar_syncer)):
     """Create a job, optionally with a new customer and straight onto the schedule.
     One transaction: if any part is refused, nothing is saved, so retrying can't duplicate."""
     company_id = actor.user.company_id
@@ -129,10 +150,16 @@ def create_job(body: JobCreate, actor: Actor = Depends(office_actor),
             session.flush()  # the event's FK needs the job row first
             repo.add_event(job.transition_to(JobStatus.SCHEDULED, actor_user_id=actor.user.id))
         session.flush()
+        # In the same transaction as the job: a rolled-back create queues no calendar write.
+        wanted = wants_event(job)
+        if wanted:
+            mark_dirty(session, job)
     except Exception:
         session.rollback()
         raise
     session.commit()
+    if wanted:
+        background.add_task(sync_calendar)
     return _job_out(job, actor, session)
 
 
@@ -142,13 +169,15 @@ def get_job(job_id: UUID, actor: Actor = Depends(current_actor), session: Sessio
 
 
 @router.patch("/jobs/{job_id}", response_model=JobOut)
-def update_job(job_id: UUID, body: JobUpdate, actor: Actor = Depends(office_actor),
-               session: Session = Depends(get_session)):
+def update_job(job_id: UUID, body: JobUpdate, background: BackgroundTasks,
+               actor: Actor = Depends(office_actor), session: Session = Depends(get_session),
+               sync_calendar: Callable[[], None] = Depends(get_calendar_syncer)):
     """Edit details, assign a technician, set the start time or the quote. Status has its own endpoint.
 
     What can change depends on the job's stage (see Job.assign/reschedule/set_quote);
     anything else answers 422 and nothing is saved."""
     job = _job(session, actor, job_id)
+    before_calendar = _calendar_state(job)
     sent = body.model_fields_set
     # Only a change of technician is checked, so a job still assigned to someone who's
     # since been deactivated can be edited until the office reassigns it.
@@ -168,20 +197,34 @@ def update_job(job_id: UUID, body: JobUpdate, actor: Actor = Depends(office_acto
     except DomainRuleViolation:
         session.rollback()  # undo the edits that were allowed before the one that wasn't
         raise
+    changed = _calendar_state(job) != before_calendar
+    if changed:
+        mark_dirty(session, job)
     session.commit()
+    if changed:
+        background.add_task(sync_calendar)
     return _job_out(job, actor, session)
 
 
 @router.post("/jobs/{job_id}/status", response_model=JobOut)
-def change_status(job_id: UUID, body: StatusChangeIn, actor: Actor = Depends(current_actor),
-                  session: Session = Depends(get_session)):
+def change_status(job_id: UUID, body: StatusChangeIn, background: BackgroundTasks,
+                  actor: Actor = Depends(current_actor), session: Session = Depends(get_session),
+                  sync_calendar: Callable[[], None] = Depends(get_calendar_syncer)):
     """Move a job along its status flow. Techs can mark their own jobs en route, in progress
     and completed; everything else is office work. Illegal moves answer 409."""
     job = _job(session, actor, job_id)
     if not can_change_status(actor.user, job, body.status, actor.technician):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You can't make that change on this job")
+    before_calendar = _calendar_state(job)
     JobRepository(session).add_event(job.transition_to(body.status, actor_user_id=actor.user.id, note=body.note))
+    # In practice this means cancelling (which takes the event down) and scheduling a
+    # draft that already has a technician and a time (which puts one up).
+    changed = _calendar_state(job) != before_calendar
+    if changed:
+        mark_dirty(session, job)
     session.commit()
+    if changed:
+        background.add_task(sync_calendar)
     return _job_out(job, actor, session)
 
 

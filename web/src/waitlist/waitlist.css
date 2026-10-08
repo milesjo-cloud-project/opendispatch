@@ -1,0 +1,394 @@
+/* The public /waitlist page. Wider than the booking and tracking pages, which are a single
+   card, so it has its own frame rather than reusing .tracking-page. */
+.wl-page {
+  min-height: 100vh;
+  padding: 0 20px 28px;
+  background: linear-gradient(170deg, #f2f8f7, #f4f6f8 46%, #e7f1ef);
+}
+.wl-brand {
+  width: min(1060px, 100%);
+  height: 70px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 auto;
+  border-bottom: 1px solid #dfe9e8;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.wl-brand .gear {
+  width: 30px;
+  height: 30px;
+  fill: var(--teal);
+  flex: none;
+}
+.wl-body {
+  width: min(1060px, 100%);
+  margin: 0 auto;
+}
+
+/* --- hero */
+.wl-hero {
+  padding: clamp(40px, 7vw, 72px) 0 clamp(32px, 5vw, 54px);
+}
+.wl-hero h1 {
+  max-width: 19ch;
+  margin: 0 0 20px;
+  font:
+    700 clamp(2rem, 6vw, 3.4rem) "Space Grotesk",
+    sans-serif;
+  line-height: 1.04;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+.wl-lede {
+  max-width: 60ch;
+  margin: 0;
+  color: #4d5a62;
+  font-size: clamp(1rem, 2.2vw, 1.18rem);
+  line-height: 1.6;
+}
+.wl-lede-narrow {
+  max-width: 62ch;
+  margin: -8px 0 24px;
+  line-height: 1.6;
+}
+.wl-pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 0;
+  margin: 30px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.wl-pipeline li {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.73rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.wl-pipeline li::after {
+  content: "›";
+  margin: 0 9px;
+  color: #bccbc9;
+}
+.wl-pipeline li:last-child::after {
+  content: "";
+  margin: 0;
+}
+.wl-pipeline li:first-child {
+  color: var(--ink);
+}
+.wl-pipeline li:last-child {
+  color: var(--teal);
+}
+.wl-pipeline-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.wl-jump {
+  display: inline-block;
+  margin-top: 28px;
+  text-decoration: none;
+}
+
+/* --- sections */
+.wl-section {
+  padding: clamp(34px, 5vw, 56px) 0;
+  border-top: 1px solid #dfe9e8;
+}
+.wl-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  margin-bottom: 18px;
+}
+.wl-section-head h2 {
+  margin: 0;
+  font:
+    700 clamp(1.4rem, 3.4vw, 2rem) "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.04em;
+}
+.wl-stamp {
+  padding: 5px 11px;
+  border: 1px solid #cfdedb;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.wl-fine {
+  max-width: 76ch;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+/* --- the offer */
+.wl-banner {
+  margin-bottom: 22px;
+  padding: 18px 20px;
+  border: 1px solid #e3c7a4;
+  border-left: 5px solid var(--orange);
+  border-radius: 12px;
+  background: #fdf6ef;
+}
+.wl-banner p {
+  max-width: 74ch;
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+.wl-banner-big {
+  margin-bottom: 8px !important;
+  color: #9a5a21;
+  font:
+    700 clamp(1.1rem, 2.6vw, 1.4rem) "Space Grotesk",
+    sans-serif !important;
+  letter-spacing: -0.03em;
+  line-height: 1.2 !important;
+}
+.wl-tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
+  gap: 14px;
+}
+.wl-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+  padding: 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: 0 10px 34px #213a3b0d;
+}
+.wl-tier.feature {
+  border: 2px solid var(--teal);
+}
+.wl-kicker {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.wl-tier.feature .wl-kicker {
+  color: var(--teal-dark);
+}
+.wl-price {
+  margin: 0;
+  font:
+    700 2.3rem "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.wl-price span {
+  font:
+    500 0.82rem "DM Sans",
+    sans-serif;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.wl-tier-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.wl-tier ul {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.wl-tier li {
+  position: relative;
+  padding-left: 15px;
+  color: #4d5a62;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.wl-tier li::before {
+  content: "–";
+  position: absolute;
+  left: 0;
+  color: #b4c5c3;
+}
+
+/* --- the comparison */
+.wl-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+}
+.wl-table {
+  width: 100%;
+  min-width: 660px;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.wl-table caption {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.wl-table th,
+.wl-table td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.wl-table thead th {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.wl-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.wl-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wl-us {
+  background: var(--teal-soft);
+}
+.wl-us td {
+  font-weight: 600;
+}
+.wl-delta {
+  color: var(--teal-dark);
+  font-weight: 600;
+}
+
+/* --- what's built */
+.wl-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 26px;
+}
+.wl-cols > div {
+  min-width: 0;
+}
+.wl-check {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wl-check li {
+  display: grid;
+  grid-template-columns: 19px 1fr;
+  gap: 8px;
+  color: #4d5a62;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.wl-tick {
+  color: var(--teal);
+  font-weight: 700;
+}
+.wl-todo {
+  color: #b4c5c3;
+  font-weight: 700;
+}
+
+/* --- the form */
+.wl-card {
+  padding: clamp(22px, 4vw, 38px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 18px 60px #213a3b12;
+}
+.wl-card h2 {
+  margin: 0 0 8px;
+  font:
+    700 clamp(1.3rem, 3vw, 1.8rem) "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.04em;
+}
+.wl-form-intro {
+  max-width: 58ch;
+  margin: 0 0 24px;
+  line-height: 1.6;
+}
+.wl-submit {
+  margin-top: 20px;
+}
+.wl-card .form-hint {
+  margin-top: 12px;
+}
+.wl-joined .wl-spot {
+  margin: 4px 0 10px;
+  color: var(--teal);
+  font:
+    700 clamp(2.4rem, 9vw, 3.4rem) "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.wl-closed {
+  margin-top: 40px;
+  text-align: left;
+}
+.wl-closed h1 {
+  margin: 0 0 12px;
+  font:
+    700 clamp(1.4rem, 4vw, 2rem) "Space Grotesk",
+    sans-serif;
+  letter-spacing: -0.04em;
+}
+
+/* --- footer */
+.wl-footer {
+  width: min(1060px, 100%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+  margin: 0 auto;
+  padding-top: 24px;
+  border-top: 1px solid #dfe9e8;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.wl-footer a {
+  color: var(--teal-dark);
+}
+
+@media (max-width: 480px) {
+  .wl-page {
+    padding: 0 13px 20px;
+  }
+  .wl-banner {
+    padding: 15px 16px;
+  }
+}
