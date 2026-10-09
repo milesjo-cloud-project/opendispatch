@@ -9,10 +9,20 @@ at refresh time, so each adapter documents the scope it needs and one token can 
 both (see README, "Connecting Google").
 """
 from datetime import datetime, timedelta, timezone
+from typing import Protocol
 
 import httpx
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
+class AccessTokenSource(Protocol):
+    """Anything that can hand an adapter a current Google access token. Two implement it:
+    GoogleToken below (a person's refresh token) and
+    adapters/google_service_account.ServiceAccountToken (a signed JWT). An adapter takes
+    either, so how the account was authenticated is not its business."""
+
+    def access_token(self) -> str: ...
 
 
 class GoogleToken:

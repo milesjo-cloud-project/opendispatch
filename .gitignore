@@ -3,6 +3,12 @@
 *.pem
 *.key
 service-account*.json
+# Google names a downloaded service account key after the project and a hash
+# (opendispatch-1a2b3c4d.json), which the rule above doesn't match. So ignore everything
+# in secrets/ instead, and keep only the note saying what the folder is for. A key is a
+# credential with no password and no expiry: committing one hands over the account.
+secrets/*
+!secrets/README.txt
 
 # python
 __pycache__/
