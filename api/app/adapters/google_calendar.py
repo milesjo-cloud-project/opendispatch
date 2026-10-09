@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 import httpx
 
-from app.adapters.google_auth import TOKEN_URL, GoogleToken
+from app.adapters.google_auth import TOKEN_URL, AccessTokenSource, GoogleToken
 from app.calendar.domain import CalendarEvent, EventGone
 
 log = logging.getLogger("opendispatch.calendar")
@@ -45,7 +45,7 @@ class GoogleCalendar:
     makes Google send them the invite and the changes.
     """
 
-    def __init__(self, token: GoogleToken, calendar_id: str = "primary",
+    def __init__(self, token: AccessTokenSource, calendar_id: str = "primary",
                  http: httpx.Client | None = None) -> None:
         self.token = token
         self.calendar_id = calendar_id

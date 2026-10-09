@@ -13,7 +13,10 @@ services:
       retries: 10
 
   api:
-    build: ./api
+    build:
+      context: ./api
+      args:
+        WITH_SHEETS: "true"  # this machine runs the waitlist; see api/requirements-sheets.txt
     env_file: .env
     environment:
       UPLOAD_DIR: /srv/uploads
@@ -27,6 +30,9 @@ services:
       - ./api/app:/srv/app
       - ./api/migrations:/srv/migrations
       - uploads:/srv/uploads  # job documents; `down -v` wipes them with the database
+      # Google service account key, if you use one. Read-only, and ./secrets is
+      # gitignored. Point GOOGLE_SERVICE_ACCOUNT_FILE at /srv/secrets/<name>.json.
+      - ./secrets:/srv/secrets:ro
     # Brings the schema up to date, then starts the API
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"
     depends_on:
@@ -38,10 +44,14 @@ services:
   # the dispatcher hit save. The API also drains the outboxes after each request that
   # queues one; this is what covers the rest of the time. One replica is enough.
   worker:
-    build: ./api
+    build:
+      context: ./api
+      args:
+        WITH_SHEETS: "true"
     env_file: .env
     volumes:
       - ./api/app:/srv/app
+      - ./secrets:/srv/secrets:ro
     command: python -m app.outbox.worker
     depends_on:
       db:

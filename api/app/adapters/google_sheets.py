@@ -15,7 +15,7 @@ from collections.abc import Mapping, Sequence
 
 import httpx
 
-from app.adapters.google_auth import GoogleToken
+from app.adapters.google_auth import AccessTokenSource
 
 log = logging.getLogger("opendispatch.sheets")
 
@@ -48,7 +48,7 @@ class GoogleSheets:
     tab once is simpler than the app guessing.
     """
 
-    def __init__(self, token: GoogleToken, spreadsheet_id: str, tab: str = "Waitlist",
+    def __init__(self, token: AccessTokenSource, spreadsheet_id: str, tab: str = "Waitlist",
                  http: httpx.Client | None = None) -> None:
         self.token = token
         self.spreadsheet_id = spreadsheet_id

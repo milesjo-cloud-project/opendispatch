@@ -248,11 +248,31 @@ closed the page says so and the API answers 404.
 
 Deciding what to build first, and emailing 100 people at launch, is spreadsheet work, so
 every signup is copied into one. Set `GOOGLE_SHEETS_ID` and `GOOGLE_SHEETS_TAB` in `.env`
-(see `.env.example`), with the same `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` as the
-calendar and a refresh token consented with `.../auth/spreadsheets`. Create the spreadsheet
-yourself, share it with that Google account as an editor, and name a tab `Waitlist`. Left
-blank, the rows go to the API log instead, which is what every install that isn't taking
-signups wants.
+(see `.env.example`). Create the spreadsheet yourself and name a tab to match. Left blank,
+the rows go to the API log instead, which is what every install that isn't taking signups
+wants.
+
+**Authenticate with a service account, not a refresh token.** Google expires the refresh
+token of an *External* OAuth app in *Testing* status after 7 days when it uses sensitive
+scopes, and `.../auth/spreadsheets` is one, so the OAuth path means re-consenting every
+week until the app is published and verified. A service account's key doesn't expire.
+This is also the one place a service account works: the calendar can't use one, because
+it can't invite technicians as attendees without Workspace domain-wide delegation, and
+writing cells needs nobody invited.
+
+1. **IAM & Admin → Service Accounts → Create**, then **Keys → Add key → JSON**.
+2. Put the downloaded file in `./secrets/` — gitignored, and mounted read-only into the
+   API and worker containers — and set `GOOGLE_SERVICE_ACCOUNT_FILE=/srv/secrets/<name>.json`.
+   In a deployment, put the JSON itself in `GOOGLE_SERVICE_ACCOUNT_JSON` from a secret store.
+3. Share the spreadsheet with the account's own address
+   (`…@….iam.gserviceaccount.com`) as an **Editor**. That one share is the account's
+   entire reach: it can touch that file and nothing else in your Drive.
+
+Signing the account's JWT needs `cryptography`, which isn't in `requirements.txt` because
+only this feature uses it — `api/requirements-sheets.txt`, installed by compose through
+the `WITH_SHEETS` build arg. The refresh-token path (`GOOGLE_SHEETS_REFRESH_TOKEN`, or
+reusing `GOOGLE_REFRESH_TOKEN`) still works and needs no extra package; a service account,
+when configured, wins over it.
 
 - `POST /public/waitlist` queues the row in `waitlist_outbox` in the signup's own
   transaction, and the write happens after the response. Nobody waits on Google to be told

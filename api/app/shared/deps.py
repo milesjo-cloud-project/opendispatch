@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.adapters.calendar import LogCalendar
 from app.adapters.email import LogEmail, SmtpEmail
 from app.adapters.google_calendar import GoogleCalendar, GoogleToken
+from app.adapters.google_service_account import ServiceAccountToken
+from app.adapters.google_sheets import SCOPE as SHEETS_SCOPE
 from app.adapters.google_sheets import GoogleSheets
 from app.adapters.notifications import LogNotifier, SmsNotifier
 from app.adapters.passwords import Argon2Hasher
@@ -100,11 +102,20 @@ def get_calendar() -> CalendarPort:
 
 @lru_cache
 def get_sheet() -> SpreadsheetPort:
+    """The launch waitlist's spreadsheet, authenticated whichever way is configured.
+
+    A service account is preferred and checked first: its credentials don't expire, while
+    a refresh token issued under a Testing-status consent screen is killed by Google after
+    7 days. The adapter takes either (adapters/google_auth.AccessTokenSource).
+    """
     if not settings.google_sheets_configured:
         return LogSheet(show_details=settings.is_local)
-    token = GoogleToken(settings.google_client_id,
-                        settings.google_client_secret.get_secret_value(),
-                        settings.sheets_refresh_token)
+    if settings.sheets_uses_service_account:
+        token = ServiceAccountToken.from_json(settings.service_account_key, SHEETS_SCOPE)
+    else:
+        token = GoogleToken(settings.google_client_id,
+                            settings.google_client_secret.get_secret_value(),
+                            settings.sheets_refresh_token)
     return GoogleSheets(token, settings.google_sheets_id, settings.google_sheets_tab)
 
 
