@@ -3,7 +3,7 @@
 Calendar writes deliberately don't happen in the request that caused them:
 
 * a provider that's slow or down would make saving a job fail, and dispatching can't
-  depend on Google being up;
+  depend on an external calendar being up;
 * a write that went out just before the transaction rolled back would put an event on a
   technician's calendar for a job that doesn't exist.
 
@@ -11,7 +11,7 @@ So routes call mark_dirty() in the same transaction as the edit, and sync_pendin
 the writing afterwards — from a background task once the response is out, and from
 app/outbox/worker.py on a timer, which is what makes a failed write actually get retried
 when nobody is using the app. The queue, the retry policy and the draining loop live in
-app/shared/outbox.py, shared with the launch waitlist's spreadsheet copy.
+app/shared/outbox.py.
 
 An outbox row carries no payload. It says only "this job's calendar event no longer
 matches the job"; the event is rebuilt from the job when it's sent. That means five edits
@@ -41,7 +41,7 @@ from app.shared.ports import CalendarPort
 log = logging.getLogger("opendispatch.calendar")
 
 # How many tries, how long between them, and how much of the provider's complaint is
-# kept: app/shared/outbox.py, because the waitlist's spreadsheet writes want the same.
+# kept: app/shared/outbox.py.
 # How far back resync_technician() reaches: today's work counts, last month's doesn't.
 RESYNC_WINDOW = timedelta(days=1)
 

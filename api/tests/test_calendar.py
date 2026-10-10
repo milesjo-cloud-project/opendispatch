@@ -52,22 +52,9 @@ def test_failing_calendar_raises_on_every_call():
         cal.create_event(an_event())
 
 
-def test_log_calendar_shows_the_whole_event_locally(caplog):
-    """With no provider configured the sync still has to complete, and locally the log is
-    how you get at the link."""
-    cal = LogCalendar(show_details=True)
-    with caplog.at_level("WARNING"):
-        external_id = cal.create_event(an_event(description="12 Elm St\nJob details: http://x/j/tok"))
-    assert external_id.startswith("log-")
-    assert "http://x/j/tok" in caplog.text
-    cal.update_event(external_id, an_event())
-    cal.cancel_event(external_id)
-
-
-def test_log_calendar_keeps_the_link_and_the_customer_out_of_the_log_elsewhere(caplog):
-    """A job link is a credential, and the body carries the customer's address and phone.
-    Outside local the log records only that an event was dropped, as LogEmail does."""
-    cal = LogCalendar(show_details=False)
+def test_log_calendar_never_logs_customer_details_or_job_links(caplog):
+    """Logs can be retained or shipped elsewhere, so they must not contain job details."""
+    cal = LogCalendar()
     event = an_event(description="Jane Doe\n+15551230000\n12 Elm St\n"
                                  "Job details: http://x/j/1.abc.def.123.SIGNATURE")
     with caplog.at_level("INFO"):

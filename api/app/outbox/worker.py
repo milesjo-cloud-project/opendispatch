@@ -1,14 +1,12 @@
 """Drains every outbox on a timer: `python -m app.outbox.worker`.
 
 The API already drains them in a background task after the request that queued the write,
-which covers the normal case. This is what makes "it retries" true the rest of the time:
-when Google is down for an hour, when the write that failed was the last request of the
-day, or when a refresh token expired overnight.
+which covers the normal case. This retries a deferred write if a request ended before its
+background task could complete.
 
-One process for all of them on purpose. They share a retry policy (app/shared/outbox.py)
-and the work is a handful of HTTP calls a day, so a second container would be a second
-thing to deploy and watch for nothing. One replica is plenty -- SKIP LOCKED means more
-than one is safe, not faster.
+One process handles the outbox because it shares a retry policy
+(app/shared/outbox.py). One replica is enough; SKIP LOCKED makes more than one safe,
+not faster.
 """
 import logging
 import signal
@@ -17,29 +15,21 @@ from types import FrameType
 
 from app.calendar.service import sync_pending as sync_calendar
 from app.config import settings
-from app.shared.deps import get_calendar, get_sheet, session_factory
-from app.waitlist.sync import sync_pending as sync_waitlist
+from app.shared.deps import get_calendar, session_factory
 
 log = logging.getLogger("opendispatch.outbox.worker")
 
 
 def run_once() -> int:
-    """One pass over every outbox. Returns how many writes went out.
+    """One pass over the calendar outbox. Returns how many writes were handled.
 
-    Each outbox gets its own session and commit, so one provider being down can't hold up
-    or roll back another's writes.
+    The outbox gets its own session and commit.
     """
     sent = 0
     with session_factory()() as session:
         sent += sync_calendar(session, get_calendar())
         session.commit()
 
-    # Only the server that takes signups has a waitlist to copy; everywhere else this
-    # would be a query per pass forever, for a table that is always empty.
-    if settings.waitlist_open:
-        with session_factory()() as session:
-            sent += sync_waitlist(session, get_sheet())
-            session.commit()
     return sent
 
 

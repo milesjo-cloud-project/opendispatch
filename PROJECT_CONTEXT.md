@@ -7,7 +7,7 @@ Open-source field service management and ticketing for small blue-collar contrac
 ## Product direction
 
 - Keep the core useful and free; offer optional paid add-ons and hosting tiers based on team size and needs.
-- Jobs should reach workers through the calendars they already use, including Google Calendar and Apple Calendar. The app/site is a backup for dispatch visibility.
+- The self-hosted release keeps scheduling in the local app. External calendar sync is deferred; technician job links remain available.
 - Each signed-in worker should land on their own assigned schedule; office dispatchers and owners can use a team/resource schedule.
 - Customers should have a live job status view opened from a private link on their invoice, without needing a full account unless that changes later.
 - Job document drop zones should accept common image formats broadly rather than limiting uploads to one image extension; consider PDF and other job documents as well.

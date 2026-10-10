@@ -1,6 +1,4 @@
-"""Calendar adapters (shared.ports.CalendarPort) for when there's no real provider: the
-API log when Google isn't configured, and an in-memory fake for tests. The Google adapter
-lives in adapters/google_calendar.py."""
+"""Local calendar adapter: records the event details in the API log, plus an in-memory fake for tests."""
 import logging
 from uuid import uuid4
 
@@ -12,38 +10,25 @@ log = logging.getLogger("opendispatch.calendar")
 class LogCalendar:
     """Writes calendar changes to the API log instead of a calendar.
 
-    Used when GOOGLE_* isn't set, which is the normal local setup: the outbox still
-    drains, so you can see what would have gone out.
+    External calendar delivery is deferred. This adapter lets the local schedule and
+    technician-link workflow stay usable without connecting to a calendar provider.
 
-    Locally it logs the whole event, link included, so you can click it straight out of
-    `docker compose logs api`. Anywhere else it logs only that an event was dropped, for
-    the same reason LogEmail holds back reset links: the body carries a signed job link,
-    which is a credential, along with the customer's address and phone number. Logs get
-    shipped and kept, so neither belongs in them.
+    It only logs the job id. Customer details and signed links should not be copied into
+    process logs, which may be retained or collected elsewhere.
     """
-
-    def __init__(self, show_details: bool) -> None:
-        self.show_details = show_details
 
     def create_event(self, event: CalendarEvent) -> str:
         external_id = f"log-{uuid4().hex}"
-        if self.show_details:
-            log.warning("CALENDAR EVENT (not sent, Google Calendar not configured)\n"
-                        "%s\n%s to %s\nFor: %s\n%s",
-                        event.title, event.starts_at, event.ends_at,
-                        event.technician_email, event.description or "")
-        else:
-            log.error("Calendar event for job %s was not sent: Google Calendar isn't configured",
-                      event.job_id)
+        log.info("External calendar sync deferred for job %s", event.job_id)
         return external_id
 
     def update_event(self, external_id: str, event: CalendarEvent) -> None:
         # No title or description: the job id is enough to find it, and says nothing.
-        log.warning("CALENDAR EVENT %s updated (not sent): job %s, %s",
+        log.info("SCHEDULED JOB %s updated locally: job %s, %s",
                     external_id, event.job_id, event.starts_at)
 
     def cancel_event(self, external_id: str) -> None:
-        log.warning("CALENDAR EVENT %s cancelled (not sent)", external_id)
+        log.info("SCHEDULED JOB %s cancelled locally", external_id)
 
 
 class FakeCalendar:

@@ -1,4 +1,4 @@
-// The /j/<token> page a technician opens from their calendar event. No login.
+// The /j/<token> page a technician opens from the office's job link. No login.
 // Read on a phone at the kerb, so the address and the phone number are the first things
 // you can tap, and nothing here needs a second page.
 import { useCallback, useEffect, useState } from "react";
@@ -85,15 +85,7 @@ export default function TechnicianJob({ token }) {
               {job.customer_address && (
                 <>
                   <dt>Address</dt>
-                  <dd>
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.customer_address)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {job.customer_address}
-                    </a>
-                  </dd>
+                  <dd>{job.customer_address}</dd>
                 </>
               )}
             </dl>

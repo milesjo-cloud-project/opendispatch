@@ -10,13 +10,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.adapters.calendar import LogCalendar
 from app.adapters.email import LogEmail, SmtpEmail
-from app.adapters.google_calendar import GoogleCalendar, GoogleToken
-from app.adapters.google_service_account import ServiceAccountToken
-from app.adapters.google_sheets import SCOPE as SHEETS_SCOPE
-from app.adapters.google_sheets import GoogleSheets
 from app.adapters.notifications import LogNotifier, SmsNotifier
 from app.adapters.passwords import Argon2Hasher
-from app.adapters.sheets import LogSheet
 from app.adapters.sms import TwilioSms
 from app.auth import service as auth
 from app.auth.domain import AuthSession
@@ -30,10 +25,8 @@ from app.shared.ports import (
     EmailPort,
     NotificationPort,
     PasswordHasherPort,
-    SpreadsheetPort,
 )
 from app.spend.service import send_pending_alerts
-from app.waitlist.sync import sync_pending as sync_waitlist_pending
 
 
 @lru_cache
@@ -92,31 +85,8 @@ def get_email() -> EmailPort:
 
 @lru_cache
 def get_calendar() -> CalendarPort:
-    if not settings.google_calendar_configured:
-        return LogCalendar(show_details=settings.is_local)
-    token = GoogleToken(settings.google_client_id,
-                        settings.google_client_secret.get_secret_value(),
-                        settings.google_refresh_token.get_secret_value())
-    return GoogleCalendar(token, settings.google_calendar_id)
-
-
-@lru_cache
-def get_sheet() -> SpreadsheetPort:
-    """The launch waitlist's spreadsheet, authenticated whichever way is configured.
-
-    A service account is preferred and checked first: its credentials don't expire, while
-    a refresh token issued under a Testing-status consent screen is killed by Google after
-    7 days. The adapter takes either (adapters/google_auth.AccessTokenSource).
-    """
-    if not settings.google_sheets_configured:
-        return LogSheet(show_details=settings.is_local)
-    if settings.sheets_uses_service_account:
-        token = ServiceAccountToken.from_json(settings.service_account_key, SHEETS_SCOPE)
-    else:
-        token = GoogleToken(settings.google_client_id,
-                            settings.google_client_secret.get_secret_value(),
-                            settings.sheets_refresh_token)
-    return GoogleSheets(token, settings.google_sheets_id, settings.google_sheets_tab)
+    """Local first release logs calendar changes; external calendar sync is deferred."""
+    return LogCalendar()
 
 
 def get_alert_sender(notifier: NotificationPort = Depends(get_notifier)) -> Callable[[], None]:
@@ -137,19 +107,6 @@ def get_calendar_syncer(calendar: CalendarPort = Depends(get_calendar)) -> Calla
     def sync() -> None:
         with session_factory()() as session:
             sync_pending(session, calendar)
-            session.commit()
-    return sync
-
-
-def get_waitlist_syncer(sheet: SpreadsheetPort = Depends(get_sheet)) -> Callable[[], None]:
-    """Runs after the response, in its own session, once the signup has committed.
-
-    Signing up must not wait on Google, and must not fail because of it, so the row goes
-    out here and app/outbox/worker.py retries the ones that fail.
-    """
-    def sync() -> None:
-        with session_factory()() as session:
-            sync_waitlist_pending(session, sheet)
             session.commit()
     return sync
 

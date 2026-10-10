@@ -196,80 +196,22 @@ Without `SMTP_*` in `.env` (see `.env.example`), the email, link included, is wr
   90-day link, `/track/<token>`, for the customer. It shows only the job title, status, and scheduled
   time, needs no login, and making a new link replaces the old one. Only a hash of the token is stored.
 
-### Calendars and technician job links
+### Scheduling and technician job links
 
-A job reaches the technician through the calendar they already use. When a job has a
-technician, a start time and is past draft, OpenDispatch puts an event on the configured
-Google calendar with the technician as an attendee, so Google sends them the invite —
-they need no Google account of their own and nothing to install. Rescheduling moves that
-event, reassigning or cancelling takes it off.
+Jobs are scheduled inside OpenDispatch. The schedule remains local to the self-hosted install;
+external calendar invitations and sync are deferred. A technician can open a private `/j/<token>`
+link on a phone with no login to see the job, customer, phone, address, and work notes. The link
+never shows the quote.
 
-The event carries a **technician job link**: `/j/<token>`, which opens the job on a phone
-with no login and shows the customer, the phone number, the address and what the work is.
-Never the quote.
-
-- The token is signed, not stored, so there's no table to leak. The signature is what
-  makes it real, which means **changing `JOB_LINK_SECRET` invalidates every link at
-  once**, and no single link can be revoked on its own. Three things keep that bounded: it
-  expires (`JOB_LINK_TTL_HOURS`, counted from the job's scheduled time so a job three
-  weeks out still has a working link on the day), it names one technician so reassigning
-  the job kills the old link, and it is read-only.
-- Disabling someone's account (`POST /users/{id}/disable`) kills their links at once and
-  takes their current and upcoming jobs off their calendar. Merely taking a technician off
-  the schedule (`PATCH /technicians/{id}`) does neither: the jobs already assigned to them
-  are still theirs to finish, so they keep both the jobs and the links.
+- The token is signed, not stored. Changing `JOB_LINK_SECRET` invalidates every link at once,
+  and no single link can be revoked on its own. It expires after `JOB_LINK_TTL_HOURS`, names
+  one technician so reassignment kills the old link, and is read-only.
+- Disabling someone's account kills their links at once. The jobs, expenses, and history stay.
 - Set `JOB_LINK_SECRET` to a long random string outside local. Left blank it works locally
-  with a built-in dev key, and is off anywhere else — events still go out, just with no link.
-- `POST /jobs/{id}/job-link` gives the office the same link to send by hand.
-- Customer tracking links are the other shape on purpose: random tokens with only a hash
-  stored, because a customer's link lives 90 days and the office needs to replace it.
-  `api/app/jobs/links.py` explains when to pick which.
-
-#### Connecting Google Calendar
-
-Calendar writes go to the API log until you set `GOOGLE_*` in `.env`, which is all you
-need locally. For real events, as the Google account whose calendar the jobs go on:
-
-1. In the Google Cloud console, enable the **Google Calendar API**, then create an OAuth
-   client of type **Desktop app** and copy its client id and secret.
-2. Consent once with the `https://www.googleapis.com/auth/calendar.events` scope and keep
-   the **refresh token** that comes back. If you also want the waitlist spreadsheet below,
-   consent with `.../auth/spreadsheets` at the same time and one token covers both.
-3. Put all three in `.env` with `GOOGLE_CALENDAR_ID` (`primary`, or a calendar id).
-
-A refresh token rather than a service account is deliberate: a service account can't
-invite attendees without Google Workspace domain-wide delegation, so the technician would
-never see the job in their own calendar. The adapter is plain HTTP
-(`api/app/adapters/google_calendar.py`), so there's no Google SDK to install, and it's one
-swap away from an Apple/ICS adapter later.
-
-#### Why writes to Google retry
-
-Writes to an outside service never happen inside the request that caused them. A provider that's down would
-make saving a job fail, and a write that went out just before a rollback would put an
-event on a technician's calendar for a job that doesn't exist. So:
-
-- `PATCH /jobs/{id}` and friends queue the job in `calendar_outbox` **in the same
-  transaction as the edit**, then the API drains the queue in a background task once the
-  response is out.
-- `api/app/outbox/worker.py` (`python -m app.outbox.worker`, the `worker` service in
-  compose) drains it again on a timer. That's what makes a failed write get retried when
-  Google is down for an hour, or when the write that failed was the last request of the day.
-- A failed write backs off (30s, doubling, capped at 6 hours) and gives up after 12 tries,
-  which spreads over about 20 hours, so a token that expired overnight is fixed in the
-  morning and the event still lands. The row stays with `last_error` to look at.
-
-The queue, the backoff and the draining loop are `api/app/shared/outbox.py`, and the
-waitlist's spreadsheet copy below uses the same ones, which is why one `worker` service
-covers both. Each feature keeps its own table, so the columns can say what they are about.
-
-An outbox row carries no payload: it only says *this job's event is out of date*, and the
-event is rebuilt from the job when it's sent. So five edits in a minute collapse into one
-write, a retry always sends current state rather than a stale snapshot, and there's no
-create/update/cancel ordering to get wrong — the sync compares what the job wants with
-what the provider has and closes the gap. `job_calendar_events` holds the provider's id
-for the event a job currently has; no row means there's nothing out there.
-
+  with a built-in development key and is disabled elsewhere.
+- `POST /jobs/{id}/job-link` gives the office a link to share manually.
+- Customer tracking links use random tokens with only a hash stored. The office can replace
+  them; `api/app/jobs/links.py` explains the difference.
 ### The launch waitlist
 
 `/waitlist` is the public page for the Winter 2027 launch: the founding prices and a signup
@@ -290,63 +232,10 @@ closed the page says so and the API answers 404.
   table without one), so there is no owner it could belong to, and a company owner on a
   hosted server must never be able to read everyone else’s contact details.
 
-#### Hosted launch landing page
+#### Hosted launch site (deferred)
 
-The pre-release landing page is deployed separately from the self-hosted app. Its Vercel
-preview uses `VITE_WAITLIST_ENDPOINT` to call the `opendispatch-waitlist` Supabase Edge
-Function. The migration and function source are in `supabase/`. The waitlist table has RLS
-enabled and grants no access to browser roles; only the server-side function can read or
-write signup details. Review signups in the Supabase dashboard. The page does not send
-automatic email; use the signup email only for beta and launch follow-up, and remove a
-signup from that dashboard if its owner asks. Configure the variable for Vercel production
-only when the public launch is approved.
-
-#### A copy of the waitlist in Google Sheets
-
-Deciding what to build first, and emailing 100 people at launch, is spreadsheet work, so
-every signup is copied into one. Set `GOOGLE_SHEETS_ID` and `GOOGLE_SHEETS_TAB` in `.env`
-(see `.env.example`). Create the spreadsheet yourself and name a tab to match. Left blank,
-the rows go to the API log instead, which is what every install that isn't taking signups
-wants.
-
-**Authenticate with a service account, not a refresh token.** Google expires the refresh
-token of an *External* OAuth app in *Testing* status after 7 days when it uses sensitive
-scopes, and `.../auth/spreadsheets` is one, so the OAuth path means re-consenting every
-week until the app is published and verified. A service account's key doesn't expire.
-This is also the one place a service account works: the calendar can't use one, because
-it can't invite technicians as attendees without Workspace domain-wide delegation, and
-writing cells needs nobody invited.
-
-1. **IAM & Admin → Service Accounts → Create**, then **Keys → Add key → JSON**.
-2. Put the downloaded file in `./secrets/` — gitignored, and mounted read-only into the
-   API and worker containers — and set `GOOGLE_SERVICE_ACCOUNT_FILE=/srv/secrets/<name>.json`.
-   In a deployment, put the JSON itself in `GOOGLE_SERVICE_ACCOUNT_JSON` from a secret store.
-3. Share the spreadsheet with the account's own address
-   (`…@….iam.gserviceaccount.com`) as an **Editor**. That one share is the account's
-   entire reach: it can touch that file and nothing else in your Drive.
-
-Signing the account's JWT needs `cryptography`, which isn't in `requirements.txt` because
-only this feature uses it — `api/requirements-sheets.txt`, installed by compose through
-the `WITH_SHEETS` build arg. The refresh-token path (`GOOGLE_SHEETS_REFRESH_TOKEN`, or
-reusing `GOOGLE_REFRESH_TOKEN`) still works and needs no extra package; a service account,
-when configured, wins over it.
-
-- `POST /public/waitlist` queues the row in `waitlist_outbox` in the signup's own
-  transaction, and the write happens after the response. Nobody waits on Google to be told
-  their spot, and a spreadsheet that's down can't turn a signup into an error.
-- **A signup's row number is its spot plus one** (the header is row 1), so a write is
-  always an overwrite of cells that belong to that one person. That is what makes retrying
-  free: appending rows could never promise the same, because a call that timed out after
-  Google acted would add somebody twice.
-- The header goes out with every write, so a brand-new empty spreadsheet comes out
-  labelled with no setup step to forget.
-- Cells are written `RAW`, so anything typed into the public form stays text. A name
-  starting with `=` is a name, not a formula.
-- `POST /waitlist/resync` (same `X-Waitlist-Token` header) queues every signup again, for
-  a spreadsheet set up after people had already joined, or one that was replaced. Every
-  row goes back where it was, so it's safe to run as often as you like.
-- The spreadsheet is only ever written to. The database is where a signup lives, so
-  editing a cell changes nothing here, and losing the sheet loses nothing: resync rebuilds it.
+The local app and its FastAPI waitlist do not require Vercel or Supabase. A public hosted
+launch site is outside this self-hosted release and can be planned separately later.
 
 ### SMS alerts
 
@@ -382,16 +271,16 @@ api/
                 customer tracking and signed technician job links
     booking/    online booking: public link and form, the office's request inbox
     waitlist/   the launch waitlist: the public /waitlist page's API, and the copy of the
-                signups in Google Sheets. The only feature with no company_id, and off
+                signups in the local database. The only feature with no company_id, and off
                 unless WAITLIST=open
-    calendar/   what a job looks like on a calendar, and keeping the provider in step
+    calendar/   local event details for technician job links
     outbox/     the worker that retries every queued write to an outside service
     spend/      budgets and budget alerts
     shared/     used by every feature: models, job status flow, who-sees-what, errors,
                 ports (interfaces for outside services), the outbox pattern and its retry
                 policy, login/session dependencies
     db/         Postgres: table definitions, sessions, tenant-scoped queries
-    adapters/   outside services behind the ports: Google Calendar, Google Sheets, email,
+    adapters/   outside services behind the ports: email,
                 SMS, notifications, passwords, files
     main.py     FastAPI wiring
   migrations/   Alembic
@@ -404,14 +293,7 @@ infra/terraform/
   envs/dev, envs/prod
 ```
 
-### Terraform (offline for now)
+### Cloud infrastructure (deferred)
 
-```
-cd infra/terraform/envs/dev
-terraform init -backend=false
-terraform fmt -recursive ../..
-terraform validate
-```
-
-Don't run `plan` or `apply` until billing is on. `init` downloads the Google
-provider but doesn't touch your GCP account.
+The Terraform files are retained for a possible hosted deployment. They are not used by
+the self-hosted release. No cloud account or cloud infrastructure is required for local setup.

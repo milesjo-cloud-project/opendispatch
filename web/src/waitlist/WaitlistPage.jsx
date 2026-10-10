@@ -2,7 +2,7 @@
 // Prices and the comparison table are the launch pricing decided in October 2026; the
 // launch window itself comes from the API (LAUNCH_LABEL) so it can move without a deploy.
 import { useEffect, useState } from "react";
-import { publicWaitlistRequest } from "../api.js";
+import { post, request } from "../api.js";
 import Gear from "../components/Gear.jsx";
 
 const CONTACT = "milesjosephson18@gmail.com";
@@ -46,7 +46,7 @@ const TIERS = [
     points: [
       "We run it: backups, updates, uptime",
       "Unlimited users, unlimited jobs",
-      "Calendar dispatch and technician job links",
+      "Shared dispatch schedule and technician job links",
       "Customer tracking links and SMS budget alerts",
       "Your rate never rises while you stay subscribed",
     ],
@@ -78,7 +78,7 @@ const TIERS = [
 
 const BUILT = [
   "Jobs, customers and team roles — owner, dispatcher, technician — with a lane on the schedule for each tech",
-  "Calendar dispatch: the tech gets the invite on the calendar they already use, needs no Google account and installs nothing",
+  "A shared dispatch schedule with technician lanes, plus private job links that open on a phone",
   "Signed technician job links that open the job on a phone with no login, and never show the quote",
   "Private 90-day tracking links so a customer can follow their own job",
   "Quotes, expenses and labour kept in whole cents, with budget alerts at 80% and 100% of the quote",
@@ -87,7 +87,7 @@ const BUILT = [
 ];
 
 const PLANNED = [
-  "Apple Calendar and plain ICS dispatch alongside Google",
+  "Optional calendar export for the providers crews already use",
   "An online booking page so customers raise their own job requests",
   "Optional day and week planning help for techs — never required, never in the way",
   "Managed hosting, help migrating off your current tool, and the founding prices above",
@@ -136,7 +136,7 @@ export default function WaitlistPage() {
   const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) });
 
   useEffect(() => {
-    publicWaitlistRequest()
+    request("/public/waitlist")
       .then(setStatus)
       .catch((e) => {
         if (e.status === 404) setClosed(true);
@@ -150,7 +150,7 @@ export default function WaitlistPage() {
     setBusy(true);
     try {
       const body = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, k === "plan" ? v : v.trim() || null]));
-      setJoined(await publicWaitlistRequest("POST", body));
+      setJoined(await post("/public/waitlist", null, body));
     } catch (e) {
       // 404: the waitlist closed while the page was open. 422 and 429 explain themselves.
       if (e.status === 404) setClosed(true);

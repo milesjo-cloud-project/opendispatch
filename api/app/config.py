@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 from typing import Literal
 
 from pydantic import SecretStr, model_validator
@@ -49,38 +48,9 @@ class Settings(BaseSettings):
     # How long a link lasts past the job's scheduled time (see jobs/links.py).
     job_link_ttl_hours: int = 72
 
-    # Google Calendar (optional). Leave GOOGLE_REFRESH_TOKEN unset and calendar writes go to
-    # the API log instead. These belong to the Google account whose calendar the jobs go on;
-    # README says how to get the refresh token.
-    google_client_id: str | None = None
-    google_client_secret: SecretStr | None = None
-    google_refresh_token: SecretStr | None = None
-    google_calendar_id: str = "primary"
-
-    # Google Sheets (optional), and only for the launch waitlist: a copy of the signups in
-    # a spreadsheet the project's own team can read without the API. Leave GOOGLE_SHEETS_ID
-    # unset and the rows go to the API log instead, which is right for every install that
-    # isn't taking signups. The spreadsheet must already exist and be shared with the
-    # Google account below, and GOOGLE_SHEETS_TAB must name a tab that's in it.
-    google_sheets_id: str | None = None
-    google_sheets_tab: str = "Waitlist"
-    # Sheets needs the .../auth/spreadsheets scope, which the calendar token doesn't have
-    # unless it was consented with both. Set this to use a second token for Sheets; leave
-    # it blank to use GOOGLE_REFRESH_TOKEN (see the README).
-    google_sheets_refresh_token: SecretStr | None = None
-    # Better than any of the refresh tokens above, for Sheets only: a service account,
-    # whose credentials don't expire. An External OAuth app in Testing status has its
-    # refresh token killed by Google every 7 days, which is a weekly chore forever.
-    # Either the path to the JSON key file (local, and the file must not be committed),
-    # or the JSON itself (a deployment, from a secret store). Needs the `cryptography`
-    # package: requirements-sheets.txt. Takes precedence over the refresh tokens.
-    google_service_account_file: str | None = None
-    google_service_account_json: SecretStr | None = None
-
-    # How long a job blocks out on a calendar. Jobs have a start time but no end yet.
+    # Default duration used for technician job details. Jobs have a start time but no end yet.
     default_job_minutes: int = 120
-    # How often app/outbox/worker.py looks for writes to retry (calendar, waitlist
-    # spreadsheet), when it has nothing to do.
+    # How often app/outbox/worker.py checks deferred calendar and waitlist exports.
     outbox_poll_seconds: int = 30
 
     # The launch waitlist (app/waitlist/). "closed" on purpose: most installs are a
@@ -126,48 +96,6 @@ class Settings(BaseSettings):
         return self.waitlist == "open"
 
     @property
-    def google_calendar_configured(self) -> bool:
-        return bool(self.google_client_id and self.google_client_secret and self.google_refresh_token)
-
-    @property
-    def sheets_refresh_token(self) -> str | None:
-        """The token Sheets uses: its own if there is one, otherwise the calendar's."""
-        token = self.google_sheets_refresh_token or self.google_refresh_token
-        return token.get_secret_value() if token is not None else None
-
-    @property
-    def service_account_key(self) -> str | None:
-        """The service account's JSON key: the inline one, or the file's contents.
-
-        Read here rather than at each write, so a path that doesn't exist is an error
-        when the process starts rather than a row stuck in the outbox.
-        """
-        if self.google_service_account_json is not None:
-            return self.google_service_account_json.get_secret_value()
-        if self.google_service_account_file:
-            path = Path(self.google_service_account_file)
-            if not path.is_file():
-                raise ValueError(
-                    f"GOOGLE_SERVICE_ACCOUNT_FILE points at {path}, which isn't a file")
-            return path.read_text(encoding="utf-8")
-        return None
-
-    @property
-    def sheets_uses_service_account(self) -> bool:
-        """Service account first: its credentials don't expire, a refresh token under a
-        Testing-status consent screen does, every 7 days."""
-        return bool(self.google_service_account_json or self.google_service_account_file)
-
-    @property
-    def google_sheets_configured(self) -> bool:
-        if not self.google_sheets_id:
-            return False
-        if self.sheets_uses_service_account:
-            return True
-        return bool(self.google_client_id and self.google_client_secret
-                    and self.sheets_refresh_token)
-
-    @property
     def job_link_key(self) -> bytes | None:
         """The key technician job links are signed with, or None when they're turned off."""
         if self.job_link_secret is not None:
@@ -184,19 +112,6 @@ class Settings(BaseSettings):
                 "Technician job links are signed with the development key from config.py. "
                 "That is fine on your own machine. Anywhere else, set APP_ENV and "
                 "JOB_LINK_SECRET, or anyone who learns a job's id can forge a link to it."
-            )
-        return self
-
-    @model_validator(mode="after")
-    def _warn_about_a_spreadsheet_with_no_account(self) -> "Settings":
-        """A spreadsheet id with no OAuth client behind it means the waitlist rows quietly
-        go to the log, which looks exactly like it working until launch day."""
-        if self.google_sheets_id and not self.google_sheets_configured:
-            log.warning(
-                "GOOGLE_SHEETS_ID is set but the Google account isn't: waitlist signups "
-                "will be written to the log, not the spreadsheet. Set "
-                "GOOGLE_SERVICE_ACCOUNT_FILE (preferred), or GOOGLE_CLIENT_ID, "
-                "GOOGLE_CLIENT_SECRET and a refresh token."
             )
         return self
 

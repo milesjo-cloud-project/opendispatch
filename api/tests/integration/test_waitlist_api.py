@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from app.main import app
-from app.shared.deps import get_session, get_waitlist_syncer
+from app.shared.deps import get_session
 
 pytestmark = pytest.mark.integration
 
@@ -36,10 +36,6 @@ def open_list(tx_session, monkeypatch):
     monkeypatch.setattr(settings, "waitlist_admin_token", SecretStr(ADMIN_TOKEN))
     monkeypatch.setattr(settings, "waitlist_limit_per_hour", 1000)
     app.dependency_overrides[get_session] = lambda: tx_session
-    # The spreadsheet write happens in a background task, which TestClient runs for real.
-    # It would open its own session outside this test's transaction, so it's a no-op here;
-    # test_waitlist_outbox.py is where the writing itself is tested.
-    app.dependency_overrides[get_waitlist_syncer] = lambda: (lambda: None)
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -139,66 +135,3 @@ def test_the_list_shows_the_signups_and_the_counts(open_list):
     assert set(report["by_plan"]) == {"hosted_monthly", "annual", "perpetual", "self_hosted", "undecided"}
     mine = [s for s in report["signups"] if s["email"] == email]
     assert len(mine) == 1 and mine[0]["company"] == "Whitfield"
-
-
-# --- the copy in the launch spreadsheet
-
-def test_joining_queues_a_spreadsheet_row(open_list, tx_session):
-    """In the signup's own transaction, so the row can't be queued for a signup that
-    rolled back. The write itself happens after the response."""
-    from sqlalchemy import select
-
-    from app.db.tables import waitlist_outbox, waitlist_signups
-
-    email = an_email()
-    open_list.post("/public/waitlist", json={"email": email})
-    queued = tx_session.execute(
-        select(waitlist_outbox)
-        .join(waitlist_signups, waitlist_signups.c.id == waitlist_outbox.c.signup_id)
-        .where(waitlist_signups.c.email == email)
-    ).mappings().all()
-    assert len(queued) == 1
-    assert queued[0]["sent_at"] is None
-
-
-def test_joining_twice_queues_one_row(open_list, tx_session):
-    """A repeat signup changes nothing, so there is nothing to write again."""
-    from sqlalchemy import func, select
-
-    from app.db.tables import waitlist_outbox, waitlist_signups
-
-    email = an_email()
-    open_list.post("/public/waitlist", json={"email": email})
-    open_list.post("/public/waitlist", json={"email": email})
-    count = tx_session.scalar(
-        select(func.count()).select_from(waitlist_outbox)
-        .join(waitlist_signups, waitlist_signups.c.id == waitlist_outbox.c.signup_id)
-        .where(waitlist_signups.c.email == email)
-    )
-    assert count == 1
-
-
-def test_the_honeypot_queues_nothing(open_list, tx_session):
-    from sqlalchemy import func, select
-
-    from app.db.tables import waitlist_outbox
-
-    before = tx_session.scalar(select(func.count()).select_from(waitlist_outbox))
-    open_list.post("/public/waitlist", json={"email": an_email(), "website": "spam.example"})
-    assert tx_session.scalar(select(func.count()).select_from(waitlist_outbox)) == before
-
-
-def test_resync_needs_the_admin_token(open_list):
-    assert open_list.post("/waitlist/resync").status_code == 404
-    assert open_list.post("/waitlist/resync", headers={"X-Waitlist-Token": "wrong"}).status_code == 404
-
-
-def test_resync_queues_every_signup_again(open_list):
-    open_list.post("/public/waitlist", json={"email": an_email()})
-    r = open_list.post("/waitlist/resync", headers={"X-Waitlist-Token": ADMIN_TOKEN})
-    assert r.status_code == 200
-    assert r.json()["queued"] >= 1
-
-
-def test_resync_is_404_when_the_waitlist_is_closed(closed):
-    assert closed.post("/waitlist/resync").status_code == 404

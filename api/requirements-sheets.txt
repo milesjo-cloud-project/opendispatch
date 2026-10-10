@@ -1,7 +1,0 @@
-# Only needed to authenticate to Google Sheets as a SERVICE ACCOUNT
-# (GOOGLE_SERVICE_ACCOUNT_FILE / _JSON). A service account signs a JWT to get its access
-# token, and signing needs real crypto; the OAuth refresh-token path doesn't, which is
-# why this isn't in requirements.txt. Install it only on the server that copies the
-# launch waitlist into a spreadsheet:
-#     pip install -r requirements-sheets.txt
-cryptography==50.0.2

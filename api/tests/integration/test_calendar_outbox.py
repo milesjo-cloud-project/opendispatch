@@ -57,7 +57,7 @@ def event_row(session, job):
 # --- queueing
 
 def test_repeated_edits_collapse_into_one_pending_write(session, a):
-    """Five edits in a minute must not mean five calls to Google."""
+    """Five edits in a minute must not mean five external calls."""
     job = scheduled_job(session, a)
     for _ in range(5):
         mark_dirty(session, job, now=NOW)
@@ -174,7 +174,7 @@ def test_an_event_deleted_at_the_provider_is_made_again(session, a):
     sync_pending(session, calendar, now=NOW, options=OPTIONS)
     first = event_row(session, job)["external_id"]
 
-    calendar.events.clear()  # somebody deleted it in Google
+    calendar.events.clear()  # somebody deleted it at the provider
     mark_dirty(session, job, now=NOW)
     assert sync_pending(session, calendar, now=NOW, options=OPTIONS) == 1
 

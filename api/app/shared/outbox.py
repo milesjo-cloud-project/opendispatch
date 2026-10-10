@@ -1,7 +1,7 @@
 """The outbox pattern, shared by everything that writes to somebody else's service.
 
-A feature that has to tell an outside provider something (put this job on a calendar,
-add this signup to a spreadsheet) must not do it inside the request that caused it: a
+A feature that has to tell an outside provider something must not do it inside the
+request that caused it: a
 provider that's slow or down would make saving fail, and a write that went out just
 before the transaction rolled back would leave the provider holding something that never
 happened here.
@@ -15,8 +15,8 @@ A row carries no payload. It names the thing that changed, and the current state
 back when the write goes out. That means repeated edits collapse into one call, a retry
 sends today's state instead of a stale snapshot, and there's no ordering to get wrong.
 
-Each feature keeps its own table (calendar_outbox, waitlist_outbox) so the columns can
-say what they're about; the policy and the loop live here.
+Each feature keeps its own table so the columns can say what they're about; the policy
+and the loop live here.
 """
 import logging
 from collections.abc import Callable, Mapping

@@ -267,7 +267,7 @@ job_calendar_events = Table(
     metadata,
     Column("job_id", _uuid(), primary_key=True),
     Column("company_id", _uuid(), ForeignKey("companies.id"), nullable=False, index=True),
-    Column("external_id", String(1024), nullable=False),  # Google allows up to 1024
+    Column("external_id", String(1024), nullable=False),
     _created_at(),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     _same_company_fk("fk_job_calendar_events_job_same_company", "job_id", "jobs"),
@@ -325,28 +325,6 @@ waitlist_signups = Table(
 # Case-insensitive, so one person can't take two spots (and two launch emails) by
 # capitalising their address differently.
 Index("uq_waitlist_signups_email_lower", func.lower(waitlist_signups.c.email), unique=True)
-
-# Queued copies of a signup into the launch spreadsheet (app/waitlist/sync.py). No
-# company_id, like the signups themselves. The row carries no cells: they are rebuilt from
-# the signup when the write goes out, so a retry sends the current row.
-waitlist_outbox = Table(
-    "waitlist_outbox",
-    metadata,
-    Column("id", _uuid(), primary_key=True),
-    Column("signup_id", _uuid(), ForeignKey("waitlist_signups.id", ondelete="CASCADE"),
-           nullable=False),
-    Column("attempts", Integer, nullable=False, server_default="0"),
-    Column("next_attempt_at", DateTime(timezone=True), nullable=False),
-    Column("last_error", Text),
-    Column("sent_at", DateTime(timezone=True)),
-    _created_at(),
-    CheckConstraint("attempts >= 0", name="attempts_not_negative"),
-)
-# One signup can only be waiting once; queueing it again updates the row it already has.
-Index("uq_waitlist_outbox_pending_signup", waitlist_outbox.c.signup_id, unique=True,
-      postgresql_where=waitlist_outbox.c.sent_at.is_(None))
-Index("ix_waitlist_outbox_due", waitlist_outbox.c.next_attempt_at,
-      postgresql_where=waitlist_outbox.c.sent_at.is_(None))
 
 # One row per counted request, for per-IP limits on public routes. Deliberately NOT per
 # company: one spammer is one spammer across every company's link. key_hash is a SHA-256 so

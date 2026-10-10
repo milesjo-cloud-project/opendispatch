@@ -62,7 +62,7 @@
 }
 .page-heading h1 {
   margin: 0;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "system-ui", sans-serif;
   font-size: clamp(1.7rem, 3vw, 2.35rem);
   letter-spacing: -0.045em;
 }
