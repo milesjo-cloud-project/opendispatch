@@ -2,7 +2,7 @@
 // Prices and the comparison table are the launch pricing decided in October 2026; the
 // launch window itself comes from the API (LAUNCH_LABEL) so it can move without a deploy.
 import { useEffect, useState } from "react";
-import { post, request } from "../api.js";
+import { publicWaitlistRequest } from "../api.js";
 import Gear from "../components/Gear.jsx";
 
 const CONTACT = "milesjosephson18@gmail.com";
@@ -40,8 +40,8 @@ const TIERS = [
   {
     kicker: "Founding · hosted monthly",
     price: "$74",
-    per: "per month",
-    note: "$119 at launch — 38% off, for life",
+    per: "billed monthly",
+    note: "$119 at launch — 38% off, for life. Cancel any time.",
     feature: true,
     points: [
       "We run it: backups, updates, uptime",
@@ -54,11 +54,11 @@ const TIERS = [
   {
     kicker: "Founding · annual",
     price: "$740",
-    per: "per year",
-    note: "Two months free — works out to $61.67/mo",
+    per: "one payment each year",
+    note: "Pay once a year. Two months free — equivalent to $61.67/mo.",
     points: [
       "Everything in the monthly plan",
-      "Saves $1,048 a year against the closest comparable plan",
+      "One $740 charge per year; saves $148 vs. paying monthly",
       "Price locked the same way",
     ],
   },
@@ -107,8 +107,8 @@ const TRADES = [
 ];
 const CREWS = ["Just me", "2 to 5", "6 to 10", "11 to 20", "More than 20"];
 const PLANS = [
-  ["hosted_monthly", "Founding hosted, $74 a month"],
-  ["annual", "Founding annual, $740 a year"],
+  ["hosted_monthly", "Hosted monthly — $74, billed each month"],
+  ["annual", "Hosted annual — one $740 payment each year"],
   ["perpetual", "Buy it outright, $1,490 once"],
   ["self_hosted", "Free self-hosted"],
   ["undecided", "Still deciding"],
@@ -136,7 +136,7 @@ export default function WaitlistPage() {
   const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) });
 
   useEffect(() => {
-    request("/public/waitlist")
+    publicWaitlistRequest()
       .then(setStatus)
       .catch((e) => {
         if (e.status === 404) setClosed(true);
@@ -150,7 +150,7 @@ export default function WaitlistPage() {
     setBusy(true);
     try {
       const body = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, k === "plan" ? v : v.trim() || null]));
-      setJoined(await post("/public/waitlist", null, body));
+      setJoined(await publicWaitlistRequest("POST", body));
     } catch (e) {
       // 404: the waitlist closed while the page was open. 422 and 429 explain themselves.
       if (e.status === 404) setClosed(true);
@@ -213,11 +213,12 @@ export default function WaitlistPage() {
           </span>
         </header>
         <div className="wl-banner">
-          <p className="wl-banner-big">$74 a month, locked for as long as you keep the account.</p>
+          <p className="wl-banner-big">$74 billed monthly, or $740 in one payment each year.</p>
           <p>
             That is <strong>$75 a month less</strong> than the closest comparable plan on the market today, and $45
-            under our own planned launch price. Unlimited users and unlimited jobs at every tier — how many people log
-            in never changes your bill.
+            under our own planned launch price. The annual option saves <strong>$148 per year</strong> compared with
+            monthly billing. Unlimited users and unlimited jobs at every tier — how many people log in never changes
+            your bill.
           </p>
         </div>
         <div className="wl-tiers">
@@ -237,8 +238,10 @@ export default function WaitlistPage() {
           ))}
         </div>
         <p className="wl-fine">
-          Founding prices are held for people on the waitlist and charged only at launch in {launch} — nothing is
-          collected now. Cancel any time; the self-hosted core stays free whatever you choose.
+          Choose the edition you are interested in; joining the waitlist does not start a subscription or collect a
+          payment. Founding prices are held for people on the waitlist and charged only at launch in {launch}. The
+          monthly plan bills each month; the annual plan is one payment per year. Cancel the monthly plan any time; the
+          self-hosted core stays free whatever you choose.
         </p>
       </section>
 
@@ -328,7 +331,7 @@ export default function WaitlistPage() {
               <h2>{joined.already_on_list ? "You were already on the list" : "Spot held"}</h2>
               <p className="wl-lede">
                 {joined.is_founding
-                  ? `Spot ${joined.spot} of ${status?.founding_spots ?? 100}. The founding rate — $74 a month, or $1,490 to own it outright — is held for you until launch in ${launch}.`
+                  ? `Spot ${joined.spot} of ${status?.founding_spots ?? 100}. Your selected founding offer — $74 monthly, $740 billed once each year, or $1,490 to own it outright — is held for you until launch in ${launch}.`
                   : `The founding spots are taken, so you are on the general list. We will still write to you first when the beta opens.`}
               </p>
               <p className="wl-fine">
@@ -409,7 +412,8 @@ export default function WaitlistPage() {
                 {busy ? "Saving your spot…" : "Hold my spot"}
               </button>
               <p className="form-hint">
-                We keep your email to write to you about the launch, and nothing else. Prefer email? <Contact />
+                We use your signup details to manage this waitlist and contact you about the beta and launch. We do not
+                sell your information. To update or remove your signup, email <Contact />.
               </p>
             </form>
           )}

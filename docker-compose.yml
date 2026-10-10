@@ -64,7 +64,10 @@ services:
     environment:
       VITE_API_TARGET: http://api:8080
     ports:
-      - "127.0.0.1:5173:5173"
+      # The launcher binds this to the computer's Private Wi-Fi IPv4 address so phones
+      # on the same trusted shop network can reach the app. Manual Compose starts stay
+      # localhost-only unless OPENDISPATCH_WEB_BIND is set in the shell.
+      - "${OPENDISPATCH_WEB_BIND:-127.0.0.1}:5173:5173"
     volumes:
       - ./web/src:/srv/web/src
     depends_on:
