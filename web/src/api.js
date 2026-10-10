@@ -9,7 +9,11 @@ export class ApiError extends Error {
 
 export async function request(path, token, options = {}) {
   const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
-  const response = await fetch(`/api${path}`, {
+  return requestUrl(`/api${path}`, token, options, isForm);
+}
+
+async function requestUrl(url, token, options = {}, isForm = false) {
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...(options.body && !isForm ? { "Content-Type": "application/json" } : {}),
@@ -28,6 +32,18 @@ export async function request(path, token, options = {}) {
 }
 
 export const post = (path, token, body) => request(path, token, { method: "POST", body: JSON.stringify(body) });
+
+// The hosted launch page can point only its public waitlist calls at the launch API.
+// Self-hosted installations keep using their local FastAPI endpoint.
+export function publicWaitlistRequest(method = "GET", body) {
+  const endpoint = import.meta.env.VITE_WAITLIST_ENDPOINT;
+  const options = {
+    method,
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  };
+  if (!endpoint) return request("/public/waitlist", null, options);
+  return requestUrl(endpoint, null, options);
+}
 
 // Field workers shouldn't have to sign in again every time the phone reloads the page.
 // The token lasts 14 days on the server and is checked with /me on every load.
