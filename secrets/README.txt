@@ -1,1 +1,1 @@
-Google service account keys go here. This folder is gitignored; the file never leaves your machine.
+This folder is reserved for local-only secrets. Do not commit secret files.

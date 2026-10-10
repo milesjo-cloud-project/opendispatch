@@ -2,7 +2,6 @@
 and adapters/ holds the code that talks to a real service (or a fake for tests).
 Features depend on these, never on an adapter directly, so a provider can be swapped or turned off.
 """
-from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from app.calendar.domain import CalendarEvent
@@ -11,8 +10,7 @@ from app.spend.budget import BudgetAlert
 
 
 class CalendarPort(Protocol):
-    """Where a scheduled job shows up for the technician. Adapters: Google Calendar,
-    the API log when no provider is configured, and a fake for tests. Apple/ICS later.
+    """An external calendar destination, currently deferred in the local release.
 
     Every method must be safe to call twice. Writes go through the outbox
     (app/calendar/service.py), which retries, so a call that timed out after the
@@ -68,23 +66,6 @@ class PasswordHasherPort(Protocol):
 
     def needs_rehash(self, password_hash: str) -> bool:
         """True when the hash was made with older settings and should be redone at next login."""
-        ...
-
-
-class SpreadsheetPort(Protocol):
-    """A spreadsheet the people who run this server read by hand. Adapters: Google Sheets,
-    the API log when no spreadsheet is configured, and a fake for tests.
-
-    Only the launch waitlist uses this, and deliberately so: a spreadsheet is the right
-    place for a list two people watch before launch and the wrong place for a
-    contractor's operating data, which belongs in the database the app enforces rules on.
-
-    Writes go through the outbox (app/waitlist/sync.py), which retries, so every call must
-    be safe to make twice: `rows` is keyed by row number for exactly that reason.
-    """
-
-    def write_rows(self, rows: Mapping[int, Sequence[str]]) -> None:
-        """Overwrite these 1-based rows with these cells. Raise if the provider refused."""
         ...
 
 

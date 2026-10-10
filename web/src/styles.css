@@ -1,8 +1,6 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap");
-
 /* Shared by every screen: colors, buttons, forms, dialogs and list panels. */
 :root {
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: system-ui, sans-serif;
   color: #202c35;
   background: #f2f5f7;
   font-synthesis: none;
@@ -52,7 +50,7 @@ a:focus-visible,
   display: flex;
   align-items: center;
   gap: 11px;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "system-ui", sans-serif;
   font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: -0.03em;
@@ -202,7 +200,7 @@ p {
 }
 .editor-head h2 {
   margin: 8px 0 0;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "system-ui", sans-serif;
   font-size: 1.5rem;
   letter-spacing: -0.03em;
 }

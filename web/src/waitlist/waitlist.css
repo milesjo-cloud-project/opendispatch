@@ -13,7 +13,7 @@
   gap: 10px;
   margin: 0 auto;
   border-bottom: 1px solid #dfe9e8;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "system-ui", sans-serif;
   font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: -0.03em;
@@ -37,7 +37,7 @@
   max-width: 19ch;
   margin: 0 0 20px;
   font:
-    700 clamp(2rem, 6vw, 3.4rem) "Space Grotesk",
+    700 clamp(2rem, 6vw, 3.4rem) "system-ui",
     sans-serif;
   line-height: 1.04;
   letter-spacing: -0.045em;
@@ -113,7 +113,7 @@
 .wl-section-head h2 {
   margin: 0;
   font:
-    700 clamp(1.4rem, 3.4vw, 2rem) "Space Grotesk",
+    700 clamp(1.4rem, 3.4vw, 2rem) "system-ui",
     sans-serif;
   letter-spacing: -0.04em;
 }
@@ -152,7 +152,7 @@
   margin-bottom: 8px !important;
   color: #9a5a21;
   font:
-    700 clamp(1.1rem, 2.6vw, 1.4rem) "Space Grotesk",
+    700 clamp(1.1rem, 2.6vw, 1.4rem) "system-ui",
     sans-serif !important;
   letter-spacing: -0.03em;
   line-height: 1.2 !important;
@@ -190,7 +190,7 @@
 .wl-price {
   margin: 0;
   font:
-    700 2.3rem "Space Grotesk",
+    700 2.3rem "system-ui",
     sans-serif;
   letter-spacing: -0.045em;
   line-height: 1;
@@ -198,7 +198,7 @@
 }
 .wl-price span {
   font:
-    500 0.82rem "DM Sans",
+    500 0.82rem "system-ui",
     sans-serif;
   color: var(--muted);
   letter-spacing: 0;
@@ -330,7 +330,7 @@
 .wl-card h2 {
   margin: 0 0 8px;
   font:
-    700 clamp(1.3rem, 3vw, 1.8rem) "Space Grotesk",
+    700 clamp(1.3rem, 3vw, 1.8rem) "system-ui",
     sans-serif;
   letter-spacing: -0.04em;
 }
@@ -349,7 +349,7 @@
   margin: 4px 0 10px;
   color: var(--teal);
   font:
-    700 clamp(2.4rem, 9vw, 3.4rem) "Space Grotesk",
+    700 clamp(2.4rem, 9vw, 3.4rem) "system-ui",
     sans-serif;
   letter-spacing: -0.05em;
   line-height: 1;
@@ -362,7 +362,7 @@
 .wl-closed h1 {
   margin: 0 0 12px;
   font:
-    700 clamp(1.4rem, 4vw, 2rem) "Space Grotesk",
+    700 clamp(1.4rem, 4vw, 2rem) "system-ui",
     sans-serif;
   letter-spacing: -0.04em;
 }

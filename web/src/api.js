@@ -22,7 +22,13 @@ async function requestUrl(url, token, options = {}, isForm = false) {
     },
   });
   if (response.status === 204) return null;
-  const data = await response.json().catch(() => ({}));
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    // Treat HTML or another non-JSON response as an error instead of accepting it as data.
+    throw new ApiError(`Server returned an unexpected response (${response.status})`, response.status);
+  }
   if (!response.ok)
     throw new ApiError(
       (Array.isArray(data.detail) ? data.detail[0]?.msg : data.detail) || `Request failed (${response.status})`,
@@ -32,18 +38,6 @@ async function requestUrl(url, token, options = {}, isForm = false) {
 }
 
 export const post = (path, token, body) => request(path, token, { method: "POST", body: JSON.stringify(body) });
-
-// The hosted launch page can point only its public waitlist calls at the launch API.
-// Self-hosted installations keep using their local FastAPI endpoint.
-export function publicWaitlistRequest(method = "GET", body) {
-  const endpoint = import.meta.env.VITE_WAITLIST_ENDPOINT;
-  const options = {
-    method,
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  };
-  if (!endpoint) return request("/public/waitlist", null, options);
-  return requestUrl(endpoint, null, options);
-}
 
 // Field workers shouldn't have to sign in again every time the phone reloads the page.
 // The token lasts 14 days on the server and is checked with /me on every load.

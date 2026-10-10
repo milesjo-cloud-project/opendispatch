@@ -13,23 +13,20 @@ company (see domain.py), so there is no owner it could belong to, and a company 
 a hosted server must never be able to read everyone else's contact details.
 """
 import secrets
-from collections.abc import Callable
 from datetime import timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.shared import rate_limit
-from app.shared.deps import client_ip, get_session, get_waitlist_syncer
+from app.shared.deps import client_ip, get_session
 from app.waitlist import service as waitlist
-from app.waitlist import sync
 from app.waitlist.domain import FOUNDING_SPOTS
 from app.waitlist.schemas import (
     WaitlistJoinedOut,
     WaitlistJoinIn,
     WaitlistReportOut,
-    WaitlistResyncedOut,
     WaitlistStatusOut,
 )
 
@@ -67,9 +64,8 @@ def waitlist_status(session: Session = Depends(get_session)):
 
 @router.post("/public/waitlist", response_model=WaitlistJoinedOut, status_code=201,
              dependencies=[Depends(waitlist_open)])
-def join_waitlist(body: WaitlistJoinIn, request: Request, background: BackgroundTasks,
-                  session: Session = Depends(get_session),
-                  sync_sheet: Callable[[], None] = Depends(get_waitlist_syncer)):
+def join_waitlist(body: WaitlistJoinIn, request: Request,
+                  session: Session = Depends(get_session)):
     if not rate_limit.allow(session, "waitlist", client_ip(request),
                             limit=settings.waitlist_limit_per_hour, window=WAITLIST_WINDOW):
         session.commit()  # keep the cleanup of old hits
@@ -84,15 +80,7 @@ def join_waitlist(body: WaitlistJoinIn, request: Request, background: Background
                                  already_on_list=False, spots_left=0)
 
     signup, is_new = waitlist.join(session, **body.model_dump(exclude={"website"}))
-    if is_new:
-        # In the same transaction as the signup, so a rolled-back signup queues no
-        # spreadsheet row. A repeat signup changes nothing, so it queues nothing.
-        sync.mark_dirty(session, signup)
     session.commit()
-    if is_new:
-        # After the response: nobody should wait on Google to be told their spot, and a
-        # spreadsheet that's down must not turn a signup into an error.
-        background.add_task(sync_sheet)
     return WaitlistJoinedOut(spot=signup.spot, is_founding=signup.is_founding,
                              already_on_list=not is_new, spots_left=waitlist.spots_left(session))
 
@@ -109,19 +97,3 @@ def waitlist_report(session: Session = Depends(get_session)):
                              last_24_hours=waitlist.recent(session, within=DAY),
                              by_plan=waitlist.counts_by_plan(session),
                              signups=rows)
-
-
-@router.post("/waitlist/resync", response_model=WaitlistResyncedOut,
-             dependencies=[Depends(waitlist_open), Depends(admin)])
-def resync_waitlist(background: BackgroundTasks, session: Session = Depends(get_session),
-                    sync_sheet: Callable[[], None] = Depends(get_waitlist_syncer)):
-    """Queue every signup for the spreadsheet again. Needs the X-Waitlist-Token header.
-
-    For a spreadsheet set up after people had already signed up, or one that was replaced
-    or ruined. Each row goes back where it was, because a signup's row number comes from
-    its spot, so this is safe to run as often as you like.
-    """
-    queued = sync.queue_all(session)
-    session.commit()
-    background.add_task(sync_sheet)
-    return WaitlistResyncedOut(queued=queued)

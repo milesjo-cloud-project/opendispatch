@@ -26,14 +26,14 @@
 .login-card .brand p {
   margin: 2px 0 0;
   color: var(--muted);
-  font-family: "DM Sans", sans-serif;
+  font-family: "system-ui", sans-serif;
   font-size: 0.8rem;
   font-weight: 400;
   letter-spacing: 0;
 }
 .login-card h2 {
   margin: 4px 0 0;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "system-ui", sans-serif;
   font-size: 1.55rem;
 }
 .login-card label {
@@ -60,7 +60,7 @@
 }
 .account-page h3 {
   margin: 0;
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "system-ui", sans-serif;
   font-size: 1.05rem;
 }
 .account-page .muted {

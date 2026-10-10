@@ -3,12 +3,8 @@ FROM python:3.14-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /srv
 
-# The Google Sheets copy of the launch waitlist authenticates as a service account,
-# which signs a JWT, which needs `cryptography`. Only the server taking signups wants it,
-# so it's a build arg rather than a line in requirements.txt.
-ARG WITH_SHEETS=false
-COPY requirements.txt requirements-sheets.txt ./
-RUN pip install --no-cache-dir -r requirements.txt     && if [ "$WITH_SHEETS" = "true" ]; then pip install --no-cache-dir -r requirements-sheets.txt; fi
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY alembic.ini .

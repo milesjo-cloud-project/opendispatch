@@ -68,9 +68,3 @@ class WaitlistReportOut(BaseModel):
     last_24_hours: int
     by_plan: dict[str, int]
     signups: list[WaitlistSignupOut]
-
-
-class WaitlistResyncedOut(BaseModel):
-    """How many signups were queued for the spreadsheet. The writes happen afterwards."""
-
-    queued: int
