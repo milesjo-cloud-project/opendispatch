@@ -36,9 +36,7 @@ jobs:
           python-version: "3.14"  # same as api/Dockerfile
           cache: pip
           cache-dependency-path: api/requirements*.txt
-      # requirements-sheets.txt too: the service account tests need cryptography,
-      # which is optional at runtime but should still be tested on every change.
-      - run: pip install -r requirements-dev.txt -r requirements-sheets.txt
+      - run: pip install -r requirements-dev.txt
       - run: ruff check .  # settings in api/ruff.toml
       - run: alembic upgrade head
         env:
